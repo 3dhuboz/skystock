@@ -17,8 +17,11 @@ PAYPAL_CLIENT_ID = "AQhmLCG_sZBYF33XviBWUIONRhvaxOUDAnRtv6pAWFvWhCBx-j71-TKutmZS
 RESEND_FROM_EMAIL = "noreply@cupcycle.au"
 SITE_URL = "https://skystock.pages.dev"
 SITE_NAME = "SkyStock FPV"
-
 ADMIN_USER_IDS = "user_3CNt5U6NsmyiW5oWl131ulqnFIk"
+
+# Vite build-time variables (VITE_ prefix required for frontend)
+VITE_CLERK_PUBLISHABLE_KEY = "pk_test_ZWxlY3RyaWMtbWFzdG9kb24tOC5jbGVyay5hY2NvdW50cy5kZXYk"
+VITE_PAYPAL_CLIENT_ID = "AQhmLCG_sZBYF33XviBWUIONRhvaxOUDAnRtv6pAWFvWhCBx-j71-TKutmZSKCrw1w934w2dbhjYAsbW"
 
 # Set these as secrets via: wrangler pages secret put <NAME>
 # CLERK_SECRET_KEY
