@@ -528,6 +528,47 @@ app.post('/admin/orders/:id/refund', async (c) => {
   return c.json({ status: 'refunded' });
 });
 
+// Admin settings
+app.get('/admin/settings', async (c) => {
+  const rows = await c.env.DB.prepare('SELECT key, value FROM settings').all();
+  const settings: Record<string, string> = {};
+  for (const row of rows.results as any[]) {
+    settings[row.key] = row.value;
+  }
+  return c.json(settings);
+});
+
+app.post('/admin/settings', async (c) => {
+  const data = await c.req.json();
+  const settingsMap: Record<string, string> = {
+    default_price: 'default_price_cents',
+    watermark_text: 'watermark_text',
+    max_downloads: 'max_downloads_per_purchase',
+    link_expiry_hours: 'download_link_expiry_hours',
+  };
+
+  for (const [formKey, dbKey] of Object.entries(settingsMap)) {
+    if (data[formKey] !== undefined) {
+      const value = formKey === 'default_price'
+        ? String(Math.round(parseFloat(data[formKey]) * 100))
+        : String(data[formKey]);
+      await c.env.DB.prepare(
+        "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now')) ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = datetime('now')"
+      ).bind(dbKey, value, value).run();
+    }
+  }
+
+  return c.json({ ok: true });
+});
+
+// Admin dashboard revenue by month
+app.get('/admin/dashboard/revenue', async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT strftime('%Y-%m', completed_at) as month, SUM(amount_cents) as total FROM orders WHERE status = 'completed' AND completed_at IS NOT NULL GROUP BY month ORDER BY month DESC LIMIT 6"
+  ).all();
+  return c.json({ months: rows.results });
+});
+
 // Cloudflare Pages Functions handler
 export const onRequest: PagesFunction<Env> = async (context) => {
   return app.fetch(context.request, context.env, context as unknown as ExecutionContext);

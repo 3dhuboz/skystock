@@ -4,7 +4,7 @@ import { CheckCircle2, Download, Mail, ArrowRight } from 'lucide-react';
 
 export default function Success() {
   const [searchParams] = useSearchParams();
-  const orderId = searchParams.get('order');
+  const orderId = searchParams.get('token') || searchParams.get('order');
   const email = searchParams.get('email');
 
   return (

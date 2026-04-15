@@ -77,6 +77,10 @@ export async function getAdminDashboard(): Promise<DashboardStats> {
   return request('/admin/dashboard');
 }
 
+export async function getAdminRevenue(): Promise<{ months: { month: string; total: number }[] }> {
+  return request('/admin/dashboard/revenue');
+}
+
 export async function getAdminVideos(params?: {
   status?: string;
   page?: number;

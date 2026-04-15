@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, Eye, Download, Star, Edit2, Trash2, Globe, EyeOff } from 'lucide-react';
+import { Plus, Search, Eye, Download, Star, Edit2, Trash2, Globe, EyeOff, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getAdminVideos, publishVideo, unpublishVideo, toggleFeatured, deleteVideo } from '../../lib/api';
 import type { Video } from '../../lib/types';
 import { formatPrice, formatDate } from '../../lib/types';
@@ -66,9 +66,16 @@ export default function AdminVideos() {
     } catch { toast.error('Failed to delete'); }
   }
 
+  const [page, setPage] = useState(1);
+  const perPage = 15;
+
   const filteredVideos = videos.filter(v =>
     !search || v.title.toLowerCase().includes(search.toLowerCase()) || v.location?.toLowerCase().includes(search.toLowerCase())
   );
+
+  const totalPages = Math.max(1, Math.ceil(filteredVideos.length / perPage));
+  const safePage = Math.min(page, totalPages);
+  const paginatedVideos = filteredVideos.slice((safePage - 1) * perPage, safePage * perPage);
 
   const statuses = ['all', 'published', 'draft', 'archived'];
 
@@ -131,9 +138,9 @@ export default function AdminVideos() {
             <tbody>
               {loading ? (
                 <tr><td colSpan={7} className="table-cell text-center text-sky-500 py-12">Loading...</td></tr>
-              ) : filteredVideos.length === 0 ? (
+              ) : paginatedVideos.length === 0 ? (
                 <tr><td colSpan={7} className="table-cell text-center text-sky-500 py-12">No videos found</td></tr>
-              ) : filteredVideos.map(video => (
+              ) : paginatedVideos.map(video => (
                 <tr key={video.id} className="border-b border-sky-800/30 hover:bg-sky-800/20 transition-colors">
                   <td className="table-cell">
                     <div className="flex items-center gap-3">
@@ -198,6 +205,26 @@ export default function AdminVideos() {
           </table>
         </div>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-xs text-sky-500">
+            Showing {(safePage - 1) * perPage + 1}–{Math.min(safePage * perPage, filteredVideos.length)} of {filteredVideos.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage <= 1}
+              className="btn-ghost text-sm disabled:opacity-30 disabled:cursor-not-allowed">
+              <ChevronLeft className="w-4 h-4" /> Prev
+            </button>
+            <span className="text-sm text-sky-400 font-mono">{safePage} / {totalPages}</span>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}
+              className="btn-ghost text-sm disabled:opacity-30 disabled:cursor-not-allowed">
+              Next <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

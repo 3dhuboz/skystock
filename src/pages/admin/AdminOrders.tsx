@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DollarSign, RefreshCw, Mail, ExternalLink } from 'lucide-react';
+import { DollarSign, RefreshCw, Mail, ExternalLink, FileDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { getAdminOrders, refundOrder } from '../../lib/api';
 import type { Order } from '../../lib/types';
 import { formatPrice, formatDateTime } from '../../lib/types';
@@ -36,8 +36,37 @@ export default function AdminOrders() {
     } catch { toast.error('Refund failed'); }
   }
 
+  const [page, setPage] = useState(1);
+  const perPage = 15;
+
   const totalRevenue = orders.filter(o => o.status === 'completed').reduce((s, o) => s + o.amount_cents, 0);
   const statuses = ['all', 'completed', 'pending', 'refunded'];
+  const totalPages = Math.max(1, Math.ceil(orders.length / perPage));
+  const safePage = Math.min(page, totalPages);
+  const paginatedOrders = orders.slice((safePage - 1) * perPage, safePage * perPage);
+
+  function exportCSV() {
+    const header = ['Order ID', 'Video', 'Buyer Name', 'Buyer Email', 'Amount (AUD)', 'Status', 'PayPal Order', 'Date'];
+    const rows = orders.map(o => [
+      o.id,
+      o.video?.title || o.video_id,
+      o.buyer_name || '',
+      o.buyer_email,
+      (o.amount_cents / 100).toFixed(2),
+      o.status,
+      o.paypal_order_id || '',
+      o.created_at,
+    ]);
+    const csv = [header, ...rows].map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `skystock-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success('CSV exported');
+  }
 
   return (
     <div className="page-enter">
@@ -46,7 +75,10 @@ export default function AdminOrders() {
           <h1 className="font-display font-bold text-2xl text-white">Orders</h1>
           <p className="text-sky-500 text-sm mt-1">{orders.length} total · {formatPrice(totalRevenue)} revenue</p>
         </div>
-        <button onClick={loadOrders} className="btn-ghost text-sm"><RefreshCw className="w-4 h-4" /> Refresh</button>
+        <div className="flex items-center gap-2">
+          <button onClick={exportCSV} className="btn-ghost text-sm"><FileDown className="w-4 h-4" /> Export CSV</button>
+          <button onClick={loadOrders} className="btn-ghost text-sm"><RefreshCw className="w-4 h-4" /> Refresh</button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -79,9 +111,9 @@ export default function AdminOrders() {
             <tbody>
               {loading ? (
                 <tr><td colSpan={7} className="table-cell text-center text-sky-500 py-12">Loading...</td></tr>
-              ) : orders.length === 0 ? (
+              ) : paginatedOrders.length === 0 ? (
                 <tr><td colSpan={7} className="table-cell text-center text-sky-500 py-12">No orders found</td></tr>
-              ) : orders.map(order => (
+              ) : paginatedOrders.map(order => (
                 <tr key={order.id} className="border-b border-sky-800/30 hover:bg-sky-800/20 transition-colors">
                   <td className="table-cell">
                     <span className="font-mono text-xs text-sky-400">{order.id}</span>
@@ -126,6 +158,26 @@ export default function AdminOrders() {
           </table>
         </div>
       </div>
+
+      {/* Pagination */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-xs text-sky-500">
+            Showing {(safePage - 1) * perPage + 1}–{Math.min(safePage * perPage, orders.length)} of {orders.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={safePage <= 1}
+              className="btn-ghost text-sm disabled:opacity-30 disabled:cursor-not-allowed">
+              <ChevronLeft className="w-4 h-4" /> Prev
+            </button>
+            <span className="text-sm text-sky-400 font-mono">{safePage} / {totalPages}</span>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={safePage >= totalPages}
+              className="btn-ghost text-sm disabled:opacity-30 disabled:cursor-not-allowed">
+              Next <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

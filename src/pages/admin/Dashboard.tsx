@@ -4,7 +4,7 @@ import {
   Film, ShoppingBag, DollarSign, Download, TrendingUp,
   Eye, ArrowUpRight, ChevronRight, Clock, Upload
 } from 'lucide-react';
-import { getAdminDashboard } from '../../lib/api';
+import { getAdminDashboard, getAdminRevenue } from '../../lib/api';
 import { formatPrice, formatDate } from '../../lib/types';
 import type { DashboardStats, Order, Video } from '../../lib/types';
 
@@ -38,7 +38,18 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       try {
-        const data = await getAdminDashboard();
+        const [data, revenueData] = await Promise.all([
+          getAdminDashboard(),
+          getAdminRevenue().catch(() => null),
+        ]);
+        // Merge real revenue data if available
+        if (revenueData?.months?.length) {
+          const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+          data.revenue_by_month = revenueData.months.reverse().map(m => {
+            const monthIdx = parseInt(m.month.split('-')[1], 10) - 1;
+            return { month: monthNames[monthIdx] || m.month, revenue: m.total };
+          });
+        }
         setStats(data);
       } catch {
         setStats(DEMO_STATS);

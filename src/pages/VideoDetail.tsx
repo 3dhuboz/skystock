@@ -7,10 +7,11 @@ import {
   Shield, Zap, CheckCircle2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getVideo, recordView } from '../lib/api';
+import { getVideo, getPublishedVideos, recordView } from '../lib/api';
 import { formatPrice, formatDuration, formatFileSize, formatDate } from '../lib/types';
 import type { Video } from '../lib/types';
 import CheckoutModal from '../components/CheckoutModal';
+import VideoCard from '../components/VideoCard';
 
 export default function VideoDetail() {
   const { id } = useParams<{ id: string }>();
@@ -25,6 +26,7 @@ export default function VideoDetail() {
 
   // Checkout state
   const [showCheckout, setShowCheckout] = useState(false);
+  const [relatedVideos, setRelatedVideos] = useState<Video[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -54,6 +56,16 @@ export default function VideoDetail() {
           created_at: '2025-01-15',
           updated_at: '2025-01-15',
         });
+        // Fetch related videos
+        try {
+          const data = await getPublishedVideos({});
+          const related = data.videos
+            .filter((rv: Video) => rv.id !== id)
+            .slice(0, 3);
+          setRelatedVideos(related);
+        } catch {
+          setRelatedVideos([]);
+        }
       } finally {
         setLoading(false);
       }
@@ -277,6 +289,18 @@ export default function VideoDetail() {
           </div>
         </div>
       </div>
+
+      {/* Related Videos */}
+      {relatedVideos.length > 0 && (
+        <div className="mt-12 pt-8 border-t border-sky-700/20">
+          <h2 className="font-display font-bold text-xl text-white mb-6">More Footage You Might Like</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {relatedVideos.map(rv => (
+              <VideoCard key={rv.id} video={rv} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* PayPal Checkout Modal */}
       <CheckoutModal
