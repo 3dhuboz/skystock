@@ -18,8 +18,9 @@ RESEND_FROM_EMAIL = "noreply@cupcycle.au"
 SITE_URL = "https://skystock.pages.dev"
 SITE_NAME = "SkyStock FPV"
 
+ADMIN_USER_IDS = "user_3CNt5U6NsmyiW5oWl131ulqnFIk"
+
 # Set these as secrets via: wrangler pages secret put <NAME>
 # CLERK_SECRET_KEY
 # PAYPAL_CLIENT_SECRET
 # RESEND_API_KEY
-# ADMIN_USER_IDS (comma-separated Clerk user IDs)
