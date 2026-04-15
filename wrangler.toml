@@ -1,0 +1,25 @@
+name = "skystock"
+compatibility_date = "2024-01-01"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "skystock-db"
+database_id = "YOUR_D1_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "skystock-videos"
+
+[vars]
+CLERK_PUBLISHABLE_KEY = "YOUR_CLERK_PUBLISHABLE_KEY"
+PAYPAL_CLIENT_ID = "YOUR_PAYPAL_CLIENT_ID"
+RESEND_FROM_EMAIL = "noreply@yourdomain.com"
+SITE_URL = "https://skystock.pages.dev"
+SITE_NAME = "SkyStock FPV"
+
+# Set these as secrets via: wrangler pages secret put <NAME>
+# CLERK_SECRET_KEY
+# PAYPAL_CLIENT_SECRET
+# RESEND_API_KEY
+# ADMIN_USER_IDS (comma-separated Clerk user IDs)
