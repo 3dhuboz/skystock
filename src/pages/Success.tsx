@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams, Link } from 'react-router-dom';
-import { CheckCircle2, Download, Mail, ArrowRight } from 'lucide-react';
+import { CheckCircle2, Download, Mail, ArrowRight, ExternalLink } from 'lucide-react';
 
 export default function Success() {
   const [searchParams] = useSearchParams();
-  const orderId = searchParams.get('token') || searchParams.get('order');
+  const token = searchParams.get('token') || searchParams.get('order');
   const email = searchParams.get('email');
 
   return (
@@ -26,7 +26,7 @@ export default function Success() {
               <span className="block text-sm font-display font-semibold text-sky-200">Download link emailed</span>
               <span className="block text-sm text-sky-500">
                 A secure download link has been sent to <strong className="text-sky-300">{email || 'your email'}</strong>.
-                Check your inbox (and spam folder).
+                Check your inbox (and spam folder). You'll also receive a purchase receipt.
               </span>
             </div>
           </div>
@@ -41,8 +41,16 @@ export default function Success() {
           </div>
         </div>
 
-        {orderId && (
-          <p className="text-xs font-mono text-sky-600 mb-6">Order ref: {orderId}</p>
+        {token && (
+          <div className="mb-6">
+            <Link
+              to={`/download?token=${token}`}
+              className="btn-ember inline-flex items-center gap-2 text-base py-3 px-6"
+            >
+              <Download className="w-5 h-5" /> Download Now
+            </Link>
+            <p className="text-xs font-mono text-sky-600 mt-3">Ref: {token.slice(0, 8)}...</p>
+          </div>
         )}
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center">

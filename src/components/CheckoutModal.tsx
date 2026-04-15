@@ -10,7 +10,7 @@ interface CheckoutModalProps {
   video: Video;
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (downloadToken: string) => void;
+  onSuccess: (downloadToken: string, email: string) => void;
 }
 
 export default function CheckoutModal({ video, isOpen, onClose, onSuccess }: CheckoutModalProps) {
@@ -52,7 +52,7 @@ export default function CheckoutModal({ video, isOpen, onClose, onSuccess }: Che
       const result = await capturePayPalOrder(data.orderID, internalOrderId);
       if (result.success) {
         toast.success('Purchase complete! Check your email for the download link.');
-        onSuccess(result.downloadToken);
+        onSuccess(result.downloadToken, email);
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Payment capture failed';

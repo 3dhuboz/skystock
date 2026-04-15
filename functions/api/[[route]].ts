@@ -69,6 +69,7 @@ async function verifyAdmin(req: Request, env: Env): Promise<boolean> {
 
 async function sendDownloadEmail(env: Env, to: string, videoTitle: string, token: string) {
   const downloadUrl = `${env.SITE_URL}/download?token=${token}`;
+  const siteName = env.SITE_NAME || 'SkyStock FPV';
 
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -77,21 +78,133 @@ async function sendDownloadEmail(env: Env, to: string, videoTitle: string, token
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      from: env.RESEND_FROM_EMAIL || 'SkyStock FPV <noreply@skystock.com>',
+      from: `${siteName} <${env.RESEND_FROM_EMAIL || 'noreply@skystock.com'}>`,
       to: [to],
-      subject: `Your SkyStock FPV Download is Ready — ${videoTitle}`,
-      html: `
-        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; background: #0a0e1a; color: #e8edf5; padding: 40px; border-radius: 16px;">
-          <h1 style="color: #5a9ce6; margin-bottom: 8px;">Your download is ready!</h1>
-          <p style="color: #8899b8;">Thank you for purchasing <strong style="color: #e8edf5;">${videoTitle}</strong> from SkyStock FPV.</p>
-          <a href="${downloadUrl}" style="display: inline-block; margin: 24px 0; padding: 14px 32px; background: linear-gradient(135deg, #f97316, #eab308); color: #0a0e1a; text-decoration: none; border-radius: 12px; font-weight: 600;">
-            Download Your Video
-          </a>
-          <p style="color: #8899b8; font-size: 14px;">This link allows up to 5 downloads and expires in 72 hours.</p>
-          <hr style="border: none; border-top: 1px solid #1a2744; margin: 24px 0;" />
-          <p style="color: #4a5e7a; font-size: 12px;">SkyStock FPV — Premium aerial footage from Central Queensland</p>
-        </div>
-      `,
+      subject: `Your Download is Ready — ${videoTitle}`,
+      html: `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#060a14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#060a14;padding:40px 16px;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+  <!-- Header -->
+  <tr><td style="padding:24px 32px;text-align:center;">
+    <h1 style="margin:0;font-size:22px;font-weight:700;color:#7db4e8;letter-spacing:1px;">${siteName}</h1>
+  </td></tr>
+  <!-- Main Card -->
+  <tr><td style="background:linear-gradient(145deg,#0f1628,#141d36);border:1px solid rgba(59,108,181,0.25);border-radius:16px;padding:40px 32px;">
+    <!-- Icon -->
+    <div style="text-align:center;margin-bottom:24px;">
+      <div style="display:inline-block;width:64px;height:64px;line-height:64px;border-radius:50%;background:rgba(16,185,129,0.12);font-size:28px;text-align:center;">✅</div>
+    </div>
+    <h2 style="margin:0 0 8px;text-align:center;font-size:24px;font-weight:700;color:#e8edf5;">Your Download is Ready</h2>
+    <p style="margin:0 0 24px;text-align:center;font-size:15px;color:#7b8fad;">Thank you for your purchase!</p>
+    <!-- Video Card -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(10,14,26,0.6);border:1px solid rgba(59,108,181,0.15);border-radius:12px;margin-bottom:24px;">
+    <tr><td style="padding:16px 20px;">
+      <p style="margin:0 0 4px;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:#4a6a94;font-weight:600;">Purchased Footage</p>
+      <p style="margin:0;font-size:17px;font-weight:600;color:#e8edf5;">${videoTitle}</p>
+    </td></tr></table>
+    <!-- CTA Button -->
+    <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:8px 0 24px;">
+      <a href="${downloadUrl}" style="display:inline-block;padding:16px 40px;background:linear-gradient(135deg,#f97316,#eab308);color:#0a0e1a;text-decoration:none;border-radius:12px;font-size:16px;font-weight:700;letter-spacing:0.3px;">
+        Download Full Video
+      </a>
+    </td></tr></table>
+    <!-- Details -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid rgba(59,108,181,0.15);padding-top:20px;">
+    <tr>
+      <td style="padding:8px 0;font-size:13px;color:#4a6a94;width:50%;">⬇️ Download limit</td>
+      <td style="padding:8px 0;font-size:13px;color:#c8d4e6;text-align:right;">5 downloads</td>
+    </tr>
+    <tr>
+      <td style="padding:8px 0;font-size:13px;color:#4a6a94;">⏰ Link expires</td>
+      <td style="padding:8px 0;font-size:13px;color:#c8d4e6;text-align:right;">72 hours</td>
+    </tr>
+    <tr>
+      <td style="padding:8px 0;font-size:13px;color:#4a6a94;">📦 Format</td>
+      <td style="padding:8px 0;font-size:13px;color:#c8d4e6;text-align:right;">Full unwatermarked 4K MP4</td>
+    </tr>
+    <tr>
+      <td style="padding:8px 0;font-size:13px;color:#4a6a94;">📜 License</td>
+      <td style="padding:8px 0;font-size:13px;color:#c8d4e6;text-align:right;">Royalty-free</td>
+    </tr>
+    </table>
+  </td></tr>
+  <!-- Footer -->
+  <tr><td style="padding:24px 32px;text-align:center;">
+    <p style="margin:0 0 8px;font-size:12px;color:#3a4d6e;">If the button doesn't work, copy this link:</p>
+    <p style="margin:0 0 16px;font-size:11px;color:#4a6a94;word-break:break-all;">${downloadUrl}</p>
+    <p style="margin:0;font-size:11px;color:#2a3a54;">${siteName} — Premium FPV aerial footage from Central Queensland, Australia</p>
+  </td></tr>
+</table>
+</td></tr></table>
+</body></html>`,
+    }),
+  });
+}
+
+async function sendReceiptEmail(env: Env, to: string, videoTitle: string, amountCents: number, currency: string, orderId: string, token: string) {
+  const downloadUrl = `${env.SITE_URL}/download?token=${token}`;
+  const siteName = env.SITE_NAME || 'SkyStock FPV';
+  const amount = (amountCents / 100).toFixed(2);
+
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      from: `${siteName} <${env.RESEND_FROM_EMAIL || 'noreply@skystock.com'}>`,
+      to: [to],
+      subject: `Receipt — ${siteName} Purchase #${orderId.slice(0, 8)}`,
+      html: `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#060a14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background-color:#060a14;padding:40px 16px;">
+<tr><td align="center">
+<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+  <tr><td style="padding:24px 32px;text-align:center;">
+    <h1 style="margin:0;font-size:22px;font-weight:700;color:#7db4e8;letter-spacing:1px;">${siteName}</h1>
+  </td></tr>
+  <tr><td style="background:linear-gradient(145deg,#0f1628,#141d36);border:1px solid rgba(59,108,181,0.25);border-radius:16px;padding:40px 32px;">
+    <div style="text-align:center;margin-bottom:24px;">
+      <div style="display:inline-block;width:64px;height:64px;line-height:64px;border-radius:50%;background:rgba(16,185,129,0.12);font-size:28px;text-align:center;">🧾</div>
+    </div>
+    <h2 style="margin:0 0 8px;text-align:center;font-size:24px;font-weight:700;color:#e8edf5;">Purchase Receipt</h2>
+    <p style="margin:0 0 24px;text-align:center;font-size:15px;color:#7b8fad;">Here's your receipt for this purchase.</p>
+    <!-- Receipt Table -->
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:rgba(10,14,26,0.6);border:1px solid rgba(59,108,181,0.15);border-radius:12px;margin-bottom:24px;">
+    <tr><td style="padding:16px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td style="padding:8px 0;font-size:13px;color:#4a6a94;">Order ID</td>
+        <td style="padding:8px 0;font-size:13px;color:#c8d4e6;text-align:right;font-family:monospace;">${orderId.slice(0, 8)}...</td>
+      </tr>
+      <tr>
+        <td style="padding:8px 0;font-size:13px;color:#4a6a94;">Video</td>
+        <td style="padding:8px 0;font-size:13px;color:#e8edf5;text-align:right;font-weight:600;">${videoTitle}</td>
+      </tr>
+      <tr>
+        <td style="padding:8px 0;font-size:13px;color:#4a6a94;">License</td>
+        <td style="padding:8px 0;font-size:13px;color:#c8d4e6;text-align:right;">Royalty-free</td>
+      </tr>
+      <tr style="border-top:1px solid rgba(59,108,181,0.15);">
+        <td style="padding:12px 0 4px;font-size:15px;color:#e8edf5;font-weight:700;">Total</td>
+        <td style="padding:12px 0 4px;font-size:15px;color:#f97316;text-align:right;font-weight:700;">$${amount} ${currency}</td>
+      </tr>
+      </table>
+    </td></tr></table>
+    <p style="margin:0;text-align:center;font-size:13px;color:#7b8fad;">Payment processed securely via PayPal.</p>
+  </td></tr>
+  <tr><td style="padding:24px 32px;text-align:center;">
+    <a href="${downloadUrl}" style="font-size:13px;color:#5a9ce6;text-decoration:underline;">Go to your download</a>
+    <p style="margin:16px 0 0;font-size:11px;color:#2a3a54;">${siteName} — Premium FPV aerial footage from Central Queensland, Australia</p>
+  </td></tr>
+</table>
+</td></tr></table>
+</body></html>`,
     }),
   });
 }
@@ -262,10 +375,13 @@ app.post('/paypal/capture-order', async (c) => {
     'INSERT INTO download_tokens (id, order_id, video_id, token, expires_at, max_downloads) VALUES (?, ?, ?, ?, ?, ?)'
   ).bind(generateId(), orderId, order.video_id, downloadToken, expiresAt, 5).run();
 
-  // Send email
+  // Send emails (download link + receipt)
   const video = await c.env.DB.prepare('SELECT title FROM videos WHERE id = ?').bind(order.video_id).first() as any;
   try {
-    await sendDownloadEmail(c.env, order.buyer_email, video.title, downloadToken);
+    await Promise.all([
+      sendDownloadEmail(c.env, order.buyer_email, video.title, downloadToken),
+      sendReceiptEmail(c.env, order.buyer_email, video.title, order.amount_cents, order.currency || 'AUD', orderId, downloadToken),
+    ]);
   } catch (e) {
     console.error('Email send failed:', e);
   }
@@ -320,8 +436,39 @@ app.get('/download/url', async (c) => {
   // Increment download count
   await c.env.DB.prepare('UPDATE download_tokens SET download_count = download_count + 1 WHERE token = ?').bind(token).run();
 
-  // Return R2 object URL (streamed through worker)
-  return c.json({ url: `/api/media/${video.original_key}` });
+  // Return direct download URL (with filename hint)
+  const slug = video.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const ext = video.original_key.split('.').pop() || 'mp4';
+  return c.json({ url: `/api/download/file/${token}`, filename: `skystock-${slug}.${ext}` });
+});
+
+// Direct file delivery with proper download headers
+app.get('/download/file/:token', async (c) => {
+  const token = c.req.param('token');
+
+  const dl = await c.env.DB.prepare('SELECT * FROM download_tokens WHERE token = ?').bind(token).first() as any;
+  if (!dl) return c.json({ message: 'Invalid token' }, 404);
+
+  if (new Date(dl.expires_at) < new Date()) return c.json({ message: 'Token expired' }, 410);
+  if (dl.download_count >= dl.max_downloads) return c.json({ message: 'Download limit reached' }, 410);
+
+  const video = await c.env.DB.prepare('SELECT original_key, title FROM videos WHERE id = ?').bind(dl.video_id).first() as any;
+  if (!video?.original_key) return c.json({ message: 'File not found' }, 404);
+
+  const object = await c.env.R2.get(video.original_key);
+  if (!object) return c.json({ message: 'File not found in storage' }, 404);
+
+  const slug = video.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const ext = video.original_key.split('.').pop() || 'mp4';
+  const filename = `skystock-${slug}.${ext}`;
+
+  const headers = new Headers();
+  headers.set('Content-Type', object.httpMetadata?.contentType || 'video/mp4');
+  headers.set('Content-Disposition', `attachment; filename="${filename}"`);
+  headers.set('Content-Length', String(object.size));
+  headers.set('Cache-Control', 'no-store');
+
+  return new Response(object.body, { headers });
 });
 
 // ============================

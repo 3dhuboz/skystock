@@ -95,9 +95,9 @@ export default function VideoDetail() {
     videoRef.current.currentTime = pct * videoRef.current.duration;
   };
 
-  function handlePurchaseSuccess(downloadToken: string) {
+  function handlePurchaseSuccess(downloadToken: string, email: string) {
     setShowCheckout(false);
-    navigate(`/success?token=${downloadToken}`);
+    navigate(`/success?token=${downloadToken}&email=${encodeURIComponent(email)}`);
   }
 
   if (loading) {
