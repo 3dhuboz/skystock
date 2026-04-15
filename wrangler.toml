@@ -5,16 +5,16 @@ pages_build_output_dir = "dist"
 [[d1_databases]]
 binding = "DB"
 database_name = "skystock-db"
-database_id = "YOUR_D1_DATABASE_ID"
+database_id = "2f4c2d2d-21e6-4f1d-be60-3dae6b307b02"
 
 [[r2_buckets]]
 binding = "R2"
 bucket_name = "skystock-videos"
 
 [vars]
-CLERK_PUBLISHABLE_KEY = "YOUR_CLERK_PUBLISHABLE_KEY"
-PAYPAL_CLIENT_ID = "YOUR_PAYPAL_CLIENT_ID"
-RESEND_FROM_EMAIL = "noreply@yourdomain.com"
+CLERK_PUBLISHABLE_KEY = "pk_test_ZWxlY3RyaWMtbWFzdG9kb24tOC5jbGVyay5hY2NvdW50cy5kZXYk"
+PAYPAL_CLIENT_ID = "AQhmLCG_sZBYF33XviBWUIONRhvaxOUDAnRtv6pAWFvWhCBx-j71-TKutmZSKCrw1w934w2dbhjYAsbW"
+RESEND_FROM_EMAIL = "noreply@cupcycle.au"
 SITE_URL = "https://skystock.pages.dev"
 SITE_NAME = "SkyStock FPV"
 
