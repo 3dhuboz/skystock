@@ -12,6 +12,7 @@ interface Env {
   ADMIN_USER_IDS: string;
   SITE_URL: string;
   SITE_NAME: string;
+  UPLOAD_API_KEY?: string;
 }
 
 const app = new Hono<{ Bindings: Env }>().basePath('/api');
@@ -475,8 +476,15 @@ app.get('/download/file/:token', async (c) => {
 // ADMIN
 // ============================
 
-// Admin auth middleware
+// Admin auth middleware (supports Clerk session token or API key)
 app.use('/admin/*', async (c, next) => {
+  // Check for API key auth (for CLI upload tool)
+  const apiKey = c.req.header('X-API-Key');
+  if (apiKey && c.env.UPLOAD_API_KEY && apiKey === c.env.UPLOAD_API_KEY) {
+    await next();
+    return;
+  }
+  // Fall back to Clerk session auth
   const isAdmin = await verifyAdmin(c.req.raw, c.env);
   if (!isAdmin) return c.json({ message: 'Unauthorized' }, 401);
   await next();
