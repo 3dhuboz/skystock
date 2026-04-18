@@ -17,7 +17,8 @@
 
 import { execSync, exec } from 'child_process';
 import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, createReadStream } from 'fs';
-import { join, basename, extname, resolve } from 'path';
+import { join, basename, extname, resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
 
 // ── Config ──────────────────────────────────────────────────────────
@@ -27,7 +28,8 @@ const API = `${SITE_URL}/api`;
 
 // Load .env from project root if present
 try {
-  const envPath = join(resolve(import.meta.url.replace('file://', ''), '..', '..'), '.env.upload');
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  const envPath = join(__dirname, '..', '.env.upload');
   if (existsSync(envPath)) {
     const lines = readFileSync(envPath, 'utf8').split('\n');
     for (const line of lines) {
