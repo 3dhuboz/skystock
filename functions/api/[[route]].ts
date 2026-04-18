@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
+import { AwsClient } from 'aws4fetch';
 
 interface Env {
   DB: D1Database;
@@ -13,6 +14,10 @@ interface Env {
   SITE_URL: string;
   SITE_NAME: string;
   UPLOAD_API_KEY?: string;
+  R2_ACCOUNT_ID: string;
+  R2_ACCESS_KEY_ID: string;
+  R2_SECRET_ACCESS_KEY: string;
+  R2_BUCKET_NAME: string;
 }
 
 const app = new Hono<{ Bindings: Env }>().basePath('/api');
@@ -600,38 +605,52 @@ app.post('/admin/videos/:id/feature', async (c) => {
 app.post('/admin/videos/:id/upload-url', async (c) => {
   const { type, filename, contentType } = await c.req.json();
   const videoId = c.req.param('id');
-  const ext = filename.split('.').pop();
-  const key = `videos/${videoId}/${type}.${ext}`;
+  const ext = (filename?.split('.').pop() || '').toLowerCase();
+  const safeExt = type === 'thumbnail' ? (ext || 'jpg') : (ext || 'mp4');
+  const key = `videos/${videoId}/${type}.${safeExt}`;
+  const ct = contentType || (type === 'thumbnail' ? 'image/jpeg' : 'video/mp4');
 
-  // For R2 direct upload, return the key and the worker will handle the upload
-  // In production, use R2 presigned URLs for direct browser upload
-  return c.json({ uploadUrl: `/api/admin/videos/${videoId}/upload/${type}`, key });
+  const bucket = c.env.R2_BUCKET_NAME || 'skystock-videos';
+  const endpoint = `https://${c.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${bucket}/${key}`;
+
+  const aws = new AwsClient({
+    accessKeyId: c.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: c.env.R2_SECRET_ACCESS_KEY,
+    service: 's3',
+    region: 'auto',
+  });
+
+  // Presign a PUT. 1-hour expiry is plenty for one upload.
+  const signed = await aws.sign(
+    new Request(`${endpoint}?X-Amz-Expires=3600`, {
+      method: 'PUT',
+      headers: { 'Content-Type': ct },
+    }),
+    { aws: { signQuery: true } }
+  );
+
+  return c.json({ uploadUrl: signed.url, key, contentType: ct });
 });
 
-app.put('/admin/videos/:id/upload/:type', async (c) => {
+app.post('/admin/videos/:id/confirm-upload', async (c) => {
+  const { type, key } = await c.req.json();
   const videoId = c.req.param('id');
-  const type = c.req.param('type');
-  const body = await c.req.arrayBuffer();
-  const contentType = c.req.header('Content-Type') || 'application/octet-stream';
 
-  const ext = contentType.includes('video') ? 'mp4' : contentType.includes('image') ? 'jpg' : 'bin';
-  const key = `videos/${videoId}/${type}.${ext}`;
+  const obj = await c.env.R2.head(key);
+  if (!obj) return c.json({ message: 'Upload not found in R2' }, 404);
 
-  await c.env.R2.put(key, body, { httpMetadata: { contentType } });
-
-  // Update video record with key
   const column = type === 'original' ? 'original_key' :
                  type === 'preview' ? 'preview_key' :
-                 type === 'thumbnail' ? 'thumbnail_key' : 'watermarked_key';
+                 type === 'thumbnail' ? 'thumbnail_key' : null;
+  if (!column) return c.json({ message: 'Invalid upload type' }, 400);
 
   await c.env.DB.prepare(`UPDATE videos SET ${column} = ?, updated_at = datetime('now') WHERE id = ?`).bind(key, videoId).run();
 
-  // If it's the original, also get file size
   if (type === 'original') {
-    await c.env.DB.prepare('UPDATE videos SET file_size_bytes = ? WHERE id = ?').bind(body.byteLength, videoId).run();
+    await c.env.DB.prepare('UPDATE videos SET file_size_bytes = ? WHERE id = ?').bind(obj.size, videoId).run();
   }
 
-  return c.json({ key, url: getR2PublicUrl(key) });
+  return c.json({ key, size: obj.size });
 });
 
 // Admin orders

@@ -131,8 +131,7 @@ export async function uploadVideoFile(
   type: 'original' | 'preview' | 'thumbnail',
   onProgress?: (pct: number) => void
 ): Promise<{ key: string; url: string }> {
-  // Get presigned upload URL
-  const { uploadUrl, key } = await request<{ uploadUrl: string; key: string }>(
+  const { uploadUrl, key, contentType } = await request<{ uploadUrl: string; key: string; contentType: string }>(
     `/admin/videos/${videoId}/upload-url`,
     {
       method: 'POST',
@@ -145,26 +144,31 @@ export async function uploadVideoFile(
     }
   );
 
-  // Upload file directly to R2
-  const xhr = new XMLHttpRequest();
-  return new Promise((resolve, reject) => {
+  // PUT directly to R2 via presigned URL
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable && onProgress) {
         onProgress(Math.round((e.loaded / e.total) * 100));
       }
     });
     xhr.addEventListener('load', () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve({ key, url: uploadUrl });
-      } else {
-        reject(new Error(`Upload failed: ${xhr.status}`));
-      }
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`Upload failed: ${xhr.status} ${xhr.responseText}`));
     });
     xhr.addEventListener('error', () => reject(new Error('Upload failed')));
     xhr.open('PUT', uploadUrl);
-    xhr.setRequestHeader('Content-Type', file.type);
+    xhr.setRequestHeader('Content-Type', contentType);
     xhr.send(file);
   });
+
+  // Record the key + size in D1 via worker
+  await request(`/admin/videos/${videoId}/confirm-upload`, {
+    method: 'POST',
+    body: JSON.stringify({ type, key }),
+  });
+
+  return { key, url: uploadUrl };
 }
 
 export async function getAdminOrders(params?: {

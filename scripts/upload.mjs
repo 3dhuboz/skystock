@@ -15,8 +15,8 @@
  *   - SKYSTOCK_URL env var set (defaults to https://skystock.pages.dev)
  */
 
-import { execSync, exec } from 'child_process';
-import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, createReadStream } from 'fs';
+import { execSync } from 'child_process';
+import { readFileSync, readdirSync, statSync, existsSync, mkdirSync } from 'fs';
 import { join, basename, extname, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
@@ -56,6 +56,12 @@ function run(cmd) {
   return execSync(cmd, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 }
 
+function parseFraction(s) {
+  if (!s) return 0;
+  const [num, den] = String(s).split('/').map(Number);
+  return den ? num / den : num;
+}
+
 function ffprobe(file) {
   const raw = run(
     `ffprobe -v quiet -print_format json -show_format -show_streams "${file}"`
@@ -92,34 +98,40 @@ async function apiRequest(path, opts = {}) {
 }
 
 async function uploadFile(videoId, filePath, type) {
-  // Step 1: Get upload URL
   const filename = basename(filePath);
-  const contentType = type === 'thumbnail' ? 'image/jpeg' : 'video/mp4';
+  const ext = extname(filePath).slice(1).toLowerCase();
+  const contentType = type === 'thumbnail'
+    ? (ext === 'png' ? 'image/png' : 'image/jpeg')
+    : (ext === 'mov' ? 'video/quicktime' : 'video/mp4');
   const fileSize = statSync(filePath).size;
 
-  const { uploadUrl } = await apiRequest(`/admin/videos/${videoId}/upload-url`, {
-    method: 'POST',
-    body: JSON.stringify({ type, filename, contentType, size: fileSize }),
-  });
+  // Step 1: Ask worker for a presigned R2 URL
+  const { uploadUrl, key, contentType: signedCt } = await apiRequest(
+    `/admin/videos/${videoId}/upload-url`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ type, filename, contentType, size: fileSize }),
+    }
+  );
 
-  // Step 2: Upload file directly
+  // Step 2: PUT directly to R2 via presigned URL (bypasses worker entirely)
   const fileBuffer = readFileSync(filePath);
-  const fullUrl = `${siteUrl}${uploadUrl}`;
-  const res = await fetch(fullUrl, {
+  const putRes = await fetch(uploadUrl, {
     method: 'PUT',
-    headers: {
-      'X-API-Key': apiKey,
-      'Content-Type': contentType,
-    },
+    headers: { 'Content-Type': signedCt || contentType },
     body: fileBuffer,
   });
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Upload failed (${type}): ${res.status} ${body}`);
+  if (!putRes.ok) {
+    const body = await putRes.text();
+    throw new Error(`R2 upload failed (${type}): ${putRes.status} ${body}`);
   }
 
-  return res.json();
+  // Step 3: Tell worker to record the key in D1
+  return apiRequest(`/admin/videos/${videoId}/confirm-upload`, {
+    method: 'POST',
+    body: JSON.stringify({ type, key }),
+  });
 }
 
 function formatBytes(bytes) {
@@ -147,9 +159,7 @@ function getVideoInfo(file) {
 
   const width = videoStream?.width || 0;
   const height = videoStream?.height || 0;
-  const fps = videoStream?.r_frame_rate
-    ? eval(videoStream.r_frame_rate)
-    : 30;
+  const fps = parseFraction(videoStream?.r_frame_rate) || 30;
   const duration = parseFloat(info.format?.duration || '0');
   const fileSize = parseInt(info.format?.size || '0');
 
@@ -269,7 +279,7 @@ async function main() {
     run('ffmpeg -version');
     run('ffprobe -version');
   } catch {
-    console.error('❌ ffmpeg/ffprobe not found. Install with: brew install ffmpeg');
+    console.error('❌ ffmpeg/ffprobe not found. Install: https://ffmpeg.org/download.html (winget install ffmpeg / brew install ffmpeg / apt install ffmpeg)');
     process.exit(1);
   }
 
