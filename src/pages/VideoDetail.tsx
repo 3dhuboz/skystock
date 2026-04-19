@@ -154,17 +154,17 @@ export default function VideoDetail() {
           {/* Viewport column */}
           <div>
             <div
-              className="relative rounded-3xl overflow-hidden cursor-pointer group"
-              onClick={togglePlay}
+              className={`relative rounded-3xl overflow-hidden group ${(video.preview_url || video.watermarked_url) ? 'cursor-pointer' : ''}`}
+              onClick={(video.preview_url || video.watermarked_url) ? togglePlay : undefined}
               style={{
                 border: '1px solid rgba(59,108,181,0.3)',
                 boxShadow: '0 30px 80px -30px rgba(0,0,0,0.6), 0 0 0 1px rgba(249,115,22,0.15)',
               }}
             >
-              {video.watermarked_url ? (
+              {(video.preview_url || video.watermarked_url) ? (
                 <video
                   ref={videoRef}
-                  src={video.watermarked_url}
+                  src={(video.preview_url || video.watermarked_url)}
                   poster={video.thumbnail_url || undefined}
                   muted={muted}
                   playsInline
@@ -211,22 +211,29 @@ export default function VideoDetail() {
                 <span className="text-xs font-display font-bold text-white uppercase tracking-wider">360° Master</span>
               </div>
 
-              {/* Play overlay */}
-              <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${playing ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'}`}>
-                <div
-                  className="w-20 h-20 rounded-full flex items-center justify-center backdrop-blur-md transition-transform hover:scale-110"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(56,189,248,0.8), rgba(249,115,22,0.8))',
-                    boxShadow: '0 0 40px rgba(249,115,22,0.5)',
-                  }}
-                >
-                  {playing ? (
-                    <Pause className="w-8 h-8 text-white" fill="white" />
-                  ) : (
-                    <Play className="w-8 h-8 text-white ml-1" fill="white" />
-                  )}
+              {/* Play overlay — only when there is a real video to play */}
+              {(video.preview_url || video.watermarked_url) ? (
+                <div className={`absolute inset-0 flex items-center justify-center transition-opacity ${playing ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'}`}>
+                  <div
+                    className="w-20 h-20 rounded-full flex items-center justify-center backdrop-blur-md transition-transform hover:scale-110"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(56,189,248,0.8), rgba(249,115,22,0.8))',
+                      boxShadow: '0 0 40px rgba(249,115,22,0.5)',
+                    }}
+                  >
+                    {playing ? (
+                      <Pause className="w-8 h-8 text-white" fill="white" />
+                    ) : (
+                      <Play className="w-8 h-8 text-white ml-1" fill="white" />
+                    )}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="absolute bottom-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-400/40 backdrop-blur-md">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="text-[11px] font-display font-medium text-amber-200">Preview video not uploaded yet</span>
+                </div>
+              )}
 
               {/* Controls bar */}
               <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-sky-950/95 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">

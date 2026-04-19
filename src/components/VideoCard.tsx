@@ -80,10 +80,10 @@ export default function VideoCard({ video, featured }: VideoCardProps) {
           />
         )}
 
-        {video.watermarked_url && (
+        {(video.preview_url || video.watermarked_url) && (
           <video
             ref={videoRef}
-            src={video.watermarked_url}
+            src={(video.preview_url || video.watermarked_url)}
             muted
             loop
             playsInline
