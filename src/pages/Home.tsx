@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, Camera, Aperture, Wand2, Crosshair, Gauge, Palette, Monitor, Check } from 'lucide-react';
 import VideoCard from '../components/VideoCard';
 import FpvShowcase from '../components/FpvShowcase';
+import HeroReframer from '../components/HeroReframer';
 import { getPublishedVideos } from '../lib/api';
 import type { Video } from '../lib/types';
 
@@ -97,16 +98,7 @@ export default function Home() {
             <div className="w-full lg:w-[580px]">
               <div className="relative aspect-[4/3] rounded-3xl overflow-hidden border border-sky-600/50 shadow-[0_30px_100px_-30px_rgba(0,0,0,0.8)] bg-[#0d1a38]">
                 {heroClipUrl ? (
-                  <video
-                    key={heroClipUrl}
-                    src={heroClipUrl}
-                    poster={heroPoster || undefined}
-                    autoPlay
-                    muted
-                    loop
-                    playsInline
-                    className="absolute inset-0 w-full h-full object-cover"
-                  />
+                  <HeroReframer src={heroClipUrl} poster={heroPoster} />
                 ) : (
                   <FpvShowcase />
                 )}
