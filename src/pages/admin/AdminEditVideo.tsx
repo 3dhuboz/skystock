@@ -15,7 +15,8 @@ export default function AdminEditVideo() {
   const [video, setVideo] = useState<Video | null>(null);
   const [form, setForm] = useState({
     title: '', description: '', location: '', tags: '',
-    price: '29.99', resolution: '4K', fps: '60', status: 'draft' as 'draft' | 'published',
+    price: '29.99', resolution: '4K', fps: '60', duration: '0',
+    status: 'draft' as 'draft' | 'published',
   });
 
   // Pending file re-uploads — user drops a new thumbnail/preview here; we upload on Save.
@@ -39,6 +40,7 @@ export default function AdminEditVideo() {
       price: (v.price_cents / 100).toFixed(2),
       resolution: v.resolution,
       fps: String(v.fps),
+      duration: String(v.duration_seconds || 0),
       status: v.status as 'draft' | 'published',
     });
   };
@@ -85,6 +87,7 @@ export default function AdminEditVideo() {
         price_cents: Math.round(parseFloat(form.price) * 100),
         resolution: form.resolution,
         fps: parseInt(form.fps),
+        duration_seconds: parseInt(form.duration) || 0,
         status: form.status,
       });
       toast.success('Video metadata saved');
@@ -228,6 +231,12 @@ export default function AdminEditVideo() {
               <option value="120">120</option><option value="60">60</option><option value="30">30</option><option value="24">24</option>
             </select>
           </div>
+        </div>
+        <div>
+          <label className="block text-sm font-display font-medium text-sky-300 mb-2">
+            Duration (seconds) <span className="text-[10px] text-sky-600">· blank to auto-detect</span>
+          </label>
+          <input name="duration" type="number" min="0" step="1" value={form.duration} onChange={handleChange} className="input-field w-40" />
         </div>
         <div>
           <label className="block text-sm font-display font-medium text-sky-300 mb-2">Status</label>

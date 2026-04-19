@@ -36,6 +36,10 @@ export default function AdminUpload() {
     status: 'draft' as 'draft' | 'published',
   });
 
+  // Detected from the original video file — duration (seconds) stays hidden in form state
+  // and gets posted to the backend on submit. Resolution/fps also auto-fill the dropdowns.
+  const [detectedDuration, setDetectedDuration] = useState<number>(0);
+
   const [files, setFiles] = useState<{
     original: File | null;
     preview: File | null;
@@ -46,10 +50,49 @@ export default function AdminUpload() {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
   }
 
+  // Read duration, width and height from a video file.
+  async function probeVideoMetadata(file: File): Promise<{ durationSeconds: number; width: number; height: number } | null> {
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file);
+      const v = document.createElement('video');
+      v.preload = 'metadata';
+      v.muted = true;
+      v.onloadedmetadata = () => {
+        const out = {
+          durationSeconds: Number.isFinite(v.duration) ? Math.round(v.duration) : 0,
+          width: v.videoWidth,
+          height: v.videoHeight,
+        };
+        URL.revokeObjectURL(url);
+        resolve(out);
+      };
+      v.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+      v.src = url;
+    });
+  }
+
+  function resolutionLabelFor(width: number, height: number): '4K' | '2.7K' | '1080p' | null {
+    const major = Math.max(width, height);
+    if (major >= 3500) return '4K';
+    if (major >= 2600) return '2.7K';
+    if (major >= 1800) return '1080p';
+    return null;
+  }
+
   function handleFileDrop(type: 'original' | 'preview' | 'thumbnail') {
-    return (e: React.ChangeEvent<HTMLInputElement>) => {
+    return async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (file) setFiles(prev => ({ ...prev, [type]: file }));
+      if (!file) return;
+      setFiles(prev => ({ ...prev, [type]: file }));
+      // Auto-fill duration + resolution from the original file.
+      if (type === 'original' && file.type.startsWith('video/')) {
+        const meta = await probeVideoMetadata(file);
+        if (meta) {
+          setDetectedDuration(meta.durationSeconds);
+          const detectedRes = resolutionLabelFor(meta.width, meta.height);
+          if (detectedRes) setForm(prev => ({ ...prev, resolution: detectedRes }));
+        }
+      }
     };
   }
 
@@ -386,6 +429,7 @@ export default function AdminUpload() {
         price_cents: Math.round(parseFloat(form.price) * 100),
         resolution: form.resolution,
         fps: parseInt(form.fps),
+        duration_seconds: detectedDuration || 0,
         status: form.status,
       });
 

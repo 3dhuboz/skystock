@@ -71,6 +71,7 @@ export interface UploadPayload {
   price_cents: number;
   resolution: string;
   fps: number;
+  duration_seconds?: number;
   status: 'draft' | 'published';
 }
 

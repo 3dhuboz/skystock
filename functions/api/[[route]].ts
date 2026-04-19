@@ -801,10 +801,10 @@ app.post('/admin/videos', async (c) => {
   const data = await c.req.json();
   const id = generateId();
   await c.env.DB.prepare(
-    `INSERT INTO videos (id, title, description, location, tags, price_cents, resolution, fps, status)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO videos (id, title, description, location, tags, price_cents, resolution, fps, duration_seconds, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).bind(id, data.title, data.description || '', data.location || '', JSON.stringify(data.tags || []),
-    data.price_cents, data.resolution || '4K', data.fps || 60, data.status || 'draft').run();
+    data.price_cents, data.resolution || '4K', data.fps || 60, data.duration_seconds || 0, data.status || 'draft').run();
 
   const video = await c.env.DB.prepare('SELECT * FROM videos WHERE id = ?').bind(id).first();
   return c.json(video, 201);
@@ -815,9 +815,12 @@ app.put('/admin/videos/:id', async (c) => {
   const id = c.req.param('id');
   await c.env.DB.prepare(
     `UPDATE videos SET title = ?, description = ?, location = ?, tags = ?, price_cents = ?,
-     resolution = ?, fps = ?, status = ?, updated_at = datetime('now') WHERE id = ?`
+     resolution = ?, fps = ?, duration_seconds = COALESCE(?, duration_seconds),
+     status = ?, updated_at = datetime('now') WHERE id = ?`
   ).bind(data.title, data.description || '', data.location || '', JSON.stringify(data.tags || []),
-    data.price_cents, data.resolution, data.fps, data.status, id).run();
+    data.price_cents, data.resolution, data.fps,
+    Number.isFinite(data.duration_seconds) ? data.duration_seconds : null,
+    data.status, id).run();
 
   const video = await c.env.DB.prepare('SELECT * FROM videos WHERE id = ?').bind(id).first();
   return c.json(video);
