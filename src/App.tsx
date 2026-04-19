@@ -1,8 +1,9 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react';
 import { Loader2 } from 'lucide-react';
+import { useIsAdmin } from './lib/admin';
 
 // Public pages
 import Layout from './components/Layout';
@@ -24,6 +25,20 @@ function EditorFallback() {
       Loading editor…
     </div>
   );
+}
+
+function AdminGate({ children }: { children: React.ReactNode }) {
+  const { isAdmin, isLoaded } = useIsAdmin();
+  if (!isLoaded) {
+    return (
+      <div className="fixed inset-0 bg-[#0a0e1a] flex items-center justify-center text-sky-400 text-sm">
+        <Loader2 className="w-5 h-5 animate-spin mr-3" />
+        Checking access…
+      </div>
+    );
+  }
+  if (!isAdmin) return <Navigate to="/account" replace />;
+  return <>{children}</>;
 }
 
 // Admin pages
@@ -87,10 +102,10 @@ export default function App() {
           <Suspense fallback={<EditorFallback />}><Editor /></Suspense>
         } />
 
-        {/* Admin routes (auth required) */}
+        {/* Admin routes (auth + admin allow-list) */}
         <Route path="/admin" element={
           <>
-            <SignedIn><AdminLayout /></SignedIn>
+            <SignedIn><AdminGate><AdminLayout /></AdminGate></SignedIn>
             <SignedOut><RedirectToSignIn /></SignedOut>
           </>
         }>

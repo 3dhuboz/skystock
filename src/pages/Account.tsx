@@ -3,10 +3,11 @@ import { Link } from 'react-router-dom';
 import { useUser, UserButton } from '@clerk/clerk-react';
 import {
   Wand2, Download, Clock, Sparkles, Film, Clapperboard,
-  CreditCard, Mail, ShoppingBag, ArrowUpRight,
+  CreditCard, Mail, ShoppingBag, ArrowUpRight, Shield,
   Infinity as InfinityIcon,
 } from 'lucide-react';
 import { formatPrice } from '../lib/types';
+import { useIsAdmin } from '../lib/admin';
 
 interface Edit {
   id: string;
@@ -41,6 +42,7 @@ const DEMO_PURCHASES: Purchase[] = [
 
 export default function Account() {
   const { user, isLoaded } = useUser();
+  const { isAdmin } = useIsAdmin();
   const [tab, setTab] = useState<'edits' | 'purchases'>('edits');
   const [edits, setEdits] = useState<Edit[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -103,6 +105,14 @@ export default function Account() {
           </Link>
           <div className="flex items-center gap-4">
             <Link to="/browse" className="text-sm text-sky-300 hover:text-white transition-colors">Browse</Link>
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-ember-400/40 bg-ember-500/10 text-ember-300 text-xs font-display font-semibold hover:bg-ember-500/20 transition-colors"
+              >
+                <Shield className="w-3.5 h-3.5" /> Admin
+              </Link>
+            )}
             <UserButton afterSignOutUrl="/" appearance={{ variables: { colorPrimary: '#f97316' } }} />
           </div>
         </div>
@@ -130,6 +140,37 @@ export default function Account() {
         <p className="text-sky-400 mt-2 max-w-xl">
           Your edits, purchases, and receipts — all in one place.
         </p>
+
+        {/* Admin quick-access — only for admin user IDs */}
+        {isAdmin && (
+          <Link
+            to="/admin"
+            className="mt-6 group flex items-center gap-4 rounded-2xl p-4 transition-all hover:scale-[1.01]"
+            style={{
+              background: 'linear-gradient(135deg, rgba(249,115,22,0.12), rgba(56,189,248,0.08))',
+              border: '1px solid rgba(249,115,22,0.4)',
+              boxShadow: '0 10px 30px -10px rgba(249,115,22,0.25)',
+            }}
+          >
+            <div
+              className="w-12 h-12 shrink-0 rounded-xl flex items-center justify-center"
+              style={{
+                background: 'linear-gradient(135deg, #f97316, #fb923c)',
+                boxShadow: '0 0 20px rgba(249,115,22,0.4)',
+              }}
+            >
+              <Shield className="w-6 h-6 text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-wider text-ember-400 mb-0.5">
+                Admin · Backend access
+              </div>
+              <div className="font-display font-bold text-white text-lg leading-tight">Open Admin Panel</div>
+              <div className="text-xs text-sky-400 mt-0.5">Upload raw clips, manage videos, view orders, configure settings.</div>
+            </div>
+            <ArrowUpRight className="w-5 h-5 text-ember-300 group-hover:text-white transition-colors" />
+          </Link>
+        )}
 
         {/* Quick stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-8">

@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Menu, X, Clapperboard, Search, LogIn } from 'lucide-react';
+import { Menu, X, Clapperboard, Search, LogIn, Shield } from 'lucide-react';
 import { SignedIn, SignedOut, UserButton } from '@clerk/clerk-react';
+import { useIsAdmin } from '../lib/admin';
 
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
+  const { isAdmin } = useIsAdmin();
 
   const navLinks = [
     { to: '/', label: 'Home' },
@@ -61,6 +63,14 @@ export default function Layout() {
                 >
                   My Edits
                 </Link>
+                {isAdmin && (
+                  <Link
+                    to="/admin"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-ember-400/40 bg-ember-500/10 text-ember-300 text-xs font-display font-semibold hover:bg-ember-500/20 transition-colors"
+                  >
+                    <Shield className="w-3.5 h-3.5" /> Admin
+                  </Link>
+                )}
                 <UserButton afterSignOutUrl="/" appearance={{ variables: { colorPrimary: '#f97316' } }} />
               </SignedIn>
               <SignedOut>

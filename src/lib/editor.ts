@@ -62,7 +62,7 @@ export function evalKeyframes(frames: Keyframe[], t: number): Keyframe | null {
 }
 
 export const LENSES: { id: LensName; label: string; fov: number; pitchBias: number; description: string }[] = [
-  { id: 'fpv',        label: 'FPV',        fov:  90, pitchBias: 0,               description: 'Tight FPV-goggle framing. Feels like flying.' },
+  { id: 'fpv',        label: 'FPV',        fov: 115, pitchBias: 0,               description: 'Wide goggle view with forward dive, edge-curl & bank. Actually feels like flying.' },
   { id: 'wide',       label: 'Wide',       fov:  75, pitchBias: 0,               description: 'Standard perspective — your reframed view.' },
   { id: 'ultraWide',  label: 'Ultra Wide', fov: 120, pitchBias: 0,               description: 'Expanded field of view. More scene in every frame.' },
   { id: 'asteroid',   label: 'Asteroid',   fov: 170, pitchBias: -Math.PI / 2 + 0.05, description: 'Tiny planet — the world curls below you. The signature 360° shot.' },
@@ -841,17 +841,26 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
 
       const pitchBias = lensIdx >= 2 ? 0 : lensDef.pitchBias;
       let finalPitch = basePitch + pitchOffset + pitchBias;
-      // FPV lens: nose the camera down slightly like goggles, and bank into turns.
+      let finalYaw = baseYaw + yawOffset;
+      // FPV lens: nose the camera down like goggles, bank into turns, and add ambient flight
+      // micro-motion so even a static clip feels like the quad is airborne.
       let finalRoll = roll;
       if (effectiveLens === 'fpv') {
-        finalPitch -= 0.13;  // ~7.5° forward tilt
+        finalPitch -= 0.31;  // ~18° forward dive — horizon sits in upper third like real FPV goggles
         const now = performance.now() / 1000;
         const dt = Math.max(0.016, Math.min(0.1, prevFrameTime ? (now - prevFrameTime) : 0.016));
         const yawVel = ((baseYaw + yawOffset) - prevYaw) / dt;
-        // Exponential smoothing on roll for a gentle feel; cap ±25° bank.
+        // Bank into turns — cap ±25°.
         const targetRoll = Math.max(-0.44, Math.min(0.44, yawVel * 0.35));
         bankRoll = bankRoll + (targetRoll - bankRoll) * 0.12;
-        finalRoll = roll + bankRoll;
+        // Ambient flight motion — motor vibration, breath-like bob, subtle drift. Sold as flying.
+        const flightTime = videoEl.currentTime || now;
+        const bobPitch = Math.sin(flightTime * 1.7) * 0.025 + Math.sin(flightTime * 5.3) * 0.008;  // ~1.5° slow + ~0.5° buzz
+        const driftYaw = Math.sin(flightTime * 0.43) * 0.012;                                       // ~0.7° yaw drift
+        const wobbleRoll = Math.sin(flightTime * 0.9) * 0.022 + Math.sin(flightTime * 4.1) * 0.006; // ~1.3° slow + ~0.35° buzz
+        finalPitch += bobPitch;
+        finalYaw += driftYaw;
+        finalRoll = roll + bankRoll + wobbleRoll;
         prevFrameTime = now;
       } else {
         bankRoll = 0;
@@ -859,7 +868,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       prevYaw = baseYaw + yawOffset;
       if (finalPitch > PITCH_LIMIT) finalPitch = PITCH_LIMIT;
       if (finalPitch < -PITCH_LIMIT) finalPitch = -PITCH_LIMIT;
-      material.uniforms.uYaw.value = baseYaw + yawOffset;
+      material.uniforms.uYaw.value = finalYaw;
       material.uniforms.uPitch.value = finalPitch;
       material.uniforms.uRoll.value = finalRoll;
 
