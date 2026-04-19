@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { DollarSign, RefreshCw, Mail, ExternalLink, FileDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { DollarSign, RefreshCw, Mail, ExternalLink, FileDown, ChevronLeft, ChevronRight, AlertTriangle } from 'lucide-react';
 import { getAdminOrders, refundOrder } from '../../lib/api';
 import type { Order } from '../../lib/types';
 import { formatPrice, formatDateTime } from '../../lib/types';
@@ -8,22 +8,20 @@ import toast from 'react-hot-toast';
 export default function AdminOrders() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => { loadOrders(); }, [statusFilter]);
 
   async function loadOrders() {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await getAdminOrders({ status: statusFilter === 'all' ? undefined : statusFilter });
-      setOrders(data.orders);
-    } catch {
-      // Demo data
-      setOrders([
-        { id: 'ord_001', video_id: '1', buyer_email: 'buyer@example.com', buyer_name: 'Jane Smith', paypal_order_id: 'PP-123', paypal_capture_id: 'CAP-456', amount_cents: 3999, currency: 'AUD', status: 'completed', created_at: '2025-02-15T10:30:00Z', completed_at: '2025-02-15T10:31:00Z', video: { id: '1', title: 'Sunrise Over The Gemfields' } as any },
-        { id: 'ord_002', video_id: '2', buyer_email: 'john@company.com', buyer_name: 'John Doe', paypal_order_id: 'PP-789', paypal_capture_id: 'CAP-012', amount_cents: 2999, currency: 'AUD', status: 'completed', created_at: '2025-02-14T14:20:00Z', completed_at: '2025-02-14T14:21:00Z', video: { id: '2', title: 'Reef Coastline Rush' } as any },
-        { id: 'ord_003', video_id: '5', buyer_email: 'creative@studio.com', buyer_name: 'Studio Pro', paypal_order_id: 'PP-345', paypal_capture_id: '', amount_cents: 3999, currency: 'AUD', status: 'pending', created_at: '2025-02-16T08:00:00Z', completed_at: '', video: { id: '5', title: 'Stockyard Creek Dive' } as any },
-      ]);
+      setOrders(data.orders || []);
+    } catch (e: any) {
+      setLoadError(e?.message || 'Could not load orders');
+      setOrders([]);
     } finally { setLoading(false); }
   }
 
@@ -80,6 +78,16 @@ export default function AdminOrders() {
           <button onClick={loadOrders} className="btn-ghost text-sm"><RefreshCw className="w-4 h-4" /> Refresh</button>
         </div>
       </div>
+
+      {loadError && (
+        <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 mb-6">
+          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          <div className="text-xs text-red-300">
+            <div className="font-display font-semibold">Couldn&apos;t load orders</div>
+            <div className="text-red-400/80 mt-0.5 font-mono">{loadError}</div>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex gap-1 p-1 bg-sky-900/40 rounded-xl border border-sky-700/20 mb-6 w-fit">

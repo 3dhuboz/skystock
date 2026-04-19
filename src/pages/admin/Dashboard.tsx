@@ -2,47 +2,37 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Film, ShoppingBag, DollarSign, Download, TrendingUp,
-  Eye, ArrowUpRight, ChevronRight, Clock, Upload
+  ArrowUpRight, ChevronRight, Clock, Upload, AlertTriangle,
 } from 'lucide-react';
 import { getAdminDashboard, getAdminRevenue } from '../../lib/api';
 import { formatPrice, formatDate } from '../../lib/types';
-import type { DashboardStats, Order, Video } from '../../lib/types';
+import type { DashboardStats } from '../../lib/types';
 
-const DEMO_STATS: DashboardStats = {
-  total_videos: 12,
-  published_videos: 8,
-  total_orders: 47,
-  total_revenue_cents: 148953,
-  total_downloads: 89,
-  recent_orders: [
-    { id: 'o1', video_id: '1', buyer_email: 'sarah@creative.co', buyer_name: 'Sarah M.', paypal_order_id: 'PP-001', paypal_capture_id: '', amount_cents: 3999, currency: 'AUD', status: 'completed', created_at: '2025-03-14T10:30:00', completed_at: '2025-03-14T10:31:00', video: { id: '1', title: 'Sunrise Over The Gemfields' } as Video },
-    { id: 'o2', video_id: '5', buyer_email: 'jake@film.com', buyer_name: 'Jake T.', paypal_order_id: 'PP-002', paypal_capture_id: '', amount_cents: 3999, currency: 'AUD', status: 'completed', created_at: '2025-03-13T15:20:00', completed_at: '2025-03-13T15:21:00', video: { id: '5', title: 'Stockyard Creek Dive' } as Video },
-    { id: 'o3', video_id: '2', buyer_email: 'lisa@studio.com', buyer_name: 'Lisa K.', paypal_order_id: 'PP-003', paypal_capture_id: '', amount_cents: 2999, currency: 'AUD', status: 'completed', created_at: '2025-03-12T09:45:00', completed_at: '2025-03-12T09:46:00', video: { id: '2', title: 'Reef Coastline Rush' } as Video },
-    { id: 'o4', video_id: '8', buyer_email: 'tom@agency.com', buyer_name: 'Tom R.', paypal_order_id: 'PP-004', paypal_capture_id: '', amount_cents: 4999, currency: 'AUD', status: 'pending', created_at: '2025-03-14T18:00:00', completed_at: '', video: { id: '8', title: 'Keppel Island Flyover' } as Video },
-  ],
+const EMPTY_STATS: DashboardStats = {
+  total_videos: 0,
+  published_videos: 0,
+  total_orders: 0,
+  total_revenue_cents: 0,
+  total_downloads: 0,
+  recent_orders: [],
   top_videos: [],
-  revenue_by_month: [
-    { month: 'Oct', revenue: 8997 },
-    { month: 'Nov', revenue: 14985 },
-    { month: 'Dec', revenue: 21480 },
-    { month: 'Jan', revenue: 28977 },
-    { month: 'Feb', revenue: 33470 },
-    { month: 'Mar', revenue: 41044 },
-  ],
+  revenue_by_month: [],
 };
 
 export default function Dashboard() {
-  const [stats, setStats] = useState<DashboardStats>(DEMO_STATS);
+  const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
+      setLoading(true);
+      setLoadError(null);
       try {
         const [data, revenueData] = await Promise.all([
           getAdminDashboard(),
           getAdminRevenue().catch(() => null),
         ]);
-        // Merge real revenue data if available
         if (revenueData?.months?.length) {
           const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
           data.revenue_by_month = revenueData.months.reverse().map(m => {
@@ -51,8 +41,9 @@ export default function Dashboard() {
           });
         }
         setStats(data);
-      } catch {
-        setStats(DEMO_STATS);
+      } catch (e: any) {
+        setLoadError(e?.message || 'Could not load dashboard');
+        setStats(EMPTY_STATS);
       } finally {
         setLoading(false);
       }
@@ -60,14 +51,27 @@ export default function Dashboard() {
     load();
   }, []);
 
-  const maxRevenue = Math.max(...stats.revenue_by_month.map(m => m.revenue));
+  const hasRevenue = stats.revenue_by_month.length > 0;
+  const maxRevenue = hasRevenue ? Math.max(...stats.revenue_by_month.map(m => m.revenue), 1) : 1;
 
   return (
     <div className="page-enter space-y-8">
       <div>
         <h1 className="font-display font-bold text-2xl text-white">Dashboard</h1>
-        <p className="text-sky-500 mt-1">Overview of your SkyStock FPV store</p>
+        <p className="text-sky-500 mt-1">
+          {loading ? 'Loading real-time stats…' : 'Overview of your SkyStock FPV store'}
+        </p>
       </div>
+
+      {loadError && (
+        <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3">
+          <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+          <div className="text-xs text-red-300">
+            <div className="font-display font-semibold">Couldn&apos;t load dashboard</div>
+            <div className="text-red-400/80 mt-0.5 font-mono">{loadError}</div>
+          </div>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -103,20 +107,32 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="flex items-end gap-3 h-48">
-            {stats.revenue_by_month.map((m, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-2">
-                <span className="text-[10px] font-mono text-sky-500">
-                  {formatPrice(m.revenue)}
-                </span>
-                <div
-                  className="w-full rounded-t-lg bg-gradient-to-t from-sky-600 to-sky-400 transition-all duration-500 min-h-[8px]"
-                  style={{ height: `${(m.revenue / maxRevenue) * 100}%` }}
-                />
-                <span className="text-xs font-mono text-sky-500">{m.month}</span>
+          {hasRevenue ? (
+            <div className="flex items-end gap-3 h-48">
+              {stats.revenue_by_month.map((m, i) => (
+                <div key={i} className="flex-1 flex flex-col items-center gap-2">
+                  <span className="text-[10px] font-mono text-sky-500">
+                    {formatPrice(m.revenue)}
+                  </span>
+                  <div
+                    className="w-full rounded-t-lg bg-gradient-to-t from-sky-600 to-sky-400 transition-all duration-500 min-h-[8px]"
+                    style={{ height: `${(m.revenue / maxRevenue) * 100}%` }}
+                  />
+                  <span className="text-xs font-mono text-sky-500">{m.month}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="h-48 flex flex-col items-center justify-center text-center gap-2">
+              <DollarSign className="w-8 h-8 text-sky-700" />
+              <div className="text-sm font-display font-semibold text-sky-400">
+                {loading ? 'Loading revenue…' : 'No sales yet'}
               </div>
-            ))}
-          </div>
+              {!loading && (
+                <div className="text-xs text-sky-600">Revenue chart appears once you have completed orders.</div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Recent Orders */}
@@ -128,26 +144,38 @@ export default function Dashboard() {
             </Link>
           </div>
 
-          <div className="space-y-3">
-            {stats.recent_orders.map((order) => (
-              <div key={order.id} className="flex items-center gap-3 p-3 rounded-xl bg-sky-900/20 hover:bg-sky-900/30 transition-colors">
-                <div className={`w-2 h-2 rounded-full ${
-                  order.status === 'completed' ? 'bg-emerald-400' :
-                  order.status === 'pending' ? 'bg-amber-400' : 'bg-red-400'
-                }`} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-sky-200 truncate">{order.video?.title || 'Video'}</p>
-                  <p className="text-xs text-sky-500">{order.buyer_email}</p>
+          {stats.recent_orders.length > 0 ? (
+            <div className="space-y-3">
+              {stats.recent_orders.map((order) => (
+                <div key={order.id} className="flex items-center gap-3 p-3 rounded-xl bg-sky-900/20 hover:bg-sky-900/30 transition-colors">
+                  <div className={`w-2 h-2 rounded-full ${
+                    order.status === 'completed' ? 'bg-emerald-400' :
+                    order.status === 'pending' ? 'bg-amber-400' : 'bg-red-400'
+                  }`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-sky-200 truncate">{order.video?.title || 'Video'}</p>
+                    <p className="text-xs text-sky-500">{order.buyer_email}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-sm font-display font-semibold text-white">{formatPrice(order.amount_cents)}</span>
+                    <span className="block text-[10px] text-sky-600 flex items-center gap-1 justify-end">
+                      <Clock className="w-3 h-3" /> {formatDate(order.created_at)}
+                    </span>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-sm font-display font-semibold text-white">{formatPrice(order.amount_cents)}</span>
-                  <span className="block text-[10px] text-sky-600 flex items-center gap-1 justify-end">
-                    <Clock className="w-3 h-3" /> {formatDate(order.created_at)}
-                  </span>
-                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="py-8 flex flex-col items-center text-center gap-2">
+              <ShoppingBag className="w-6 h-6 text-sky-700" />
+              <div className="text-sm font-display font-semibold text-sky-400">
+                {loading ? 'Loading orders…' : 'No orders yet'}
               </div>
-            ))}
-          </div>
+              {!loading && (
+                <div className="text-xs text-sky-600">Customer purchases show up here as they happen.</div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
