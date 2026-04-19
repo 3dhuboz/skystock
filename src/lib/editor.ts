@@ -9,7 +9,7 @@ export const PRESETS: { id: PresetName; label: string; description: string }[] =
   { id: 'reverseReveal',  label: 'Reverse Reveal', description: 'Opens on horizon, drifts down and away.' },
 ];
 
-export type LensName = 'wide' | 'ultraWide' | 'asteroid' | 'rabbitHole';
+export type LensName = 'fpv' | 'wide' | 'ultraWide' | 'asteroid' | 'rabbitHole';
 
 export interface Keyframe {
   /** Absolute time in seconds (on the video timeline). */
@@ -62,6 +62,7 @@ export function evalKeyframes(frames: Keyframe[], t: number): Keyframe | null {
 }
 
 export const LENSES: { id: LensName; label: string; fov: number; pitchBias: number; description: string }[] = [
+  { id: 'fpv',        label: 'FPV',        fov:  90, pitchBias: 0,               description: 'Tight FPV-goggle framing. Feels like flying.' },
   { id: 'wide',       label: 'Wide',       fov:  75, pitchBias: 0,               description: 'Standard perspective — your reframed view.' },
   { id: 'ultraWide',  label: 'Ultra Wide', fov: 120, pitchBias: 0,               description: 'Expanded field of view. More scene in every frame.' },
   { id: 'asteroid',   label: 'Asteroid',   fov: 170, pitchBias: -Math.PI / 2 + 0.05, description: 'Tiny planet — the world curls below you. The signature 360° shot.' },
@@ -108,9 +109,50 @@ export interface ColorAdjust {
   contrast: number;    // 0..2 (1 = neutral)
   saturation: number;  // 0..2 (1 = neutral)
   temperature: number; // -1..+1 (+ warm, - cool)
+  dLogM: boolean;      // apply D-Log M → Rec.709 tonemap
 }
 
-export const DEFAULT_COLOR: ColorAdjust = { exposure: 0, contrast: 1, saturation: 1, temperature: 0 };
+export const DEFAULT_COLOR: ColorAdjust = { exposure: 0, contrast: 1, saturation: 1, temperature: 0, dLogM: false };
+
+/** Sample the given video element and derive auto color settings. Runs on a 64x32 scratch canvas
+ *  so it's cheap enough to call live. Returns neutral settings if the video isn't ready. */
+export function computeAutoColor(video: HTMLVideoElement, assumeDLogM = false): ColorAdjust {
+  if (!video || video.readyState < 2) return DEFAULT_COLOR;
+  const w = 64, h = 32;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  if (!ctx) return DEFAULT_COLOR;
+  try { ctx.drawImage(video, 0, 0, w, h); } catch { return DEFAULT_COLOR; }
+  const data = ctx.getImageData(0, 0, w, h).data;
+  let sumL = 0, minL = 255, maxL = 0, sumR = 0, sumG = 0, sumB = 0, sumSat = 0;
+  const n = data.length / 4;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    sumL += L; sumR += r; sumG += g; sumB += b;
+    if (L < minL) minL = L;
+    if (L > maxL) maxL = L;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    sumSat += mx === 0 ? 0 : (mx - mn) / mx;
+  }
+  const meanL = sumL / n / 255;
+  const contrastRange = (maxL - minL) / 255;
+  const meanSat = sumSat / n;
+  const meanR = sumR / n / 255;
+  const meanB = sumB / n / 255;
+
+  // Exposure: push mean luminance toward 0.5 (mid-grey).
+  const exposure = Math.max(-1.5, Math.min(1.5, Math.log2(0.5 / Math.max(0.04, meanL))));
+  // Contrast: if the luminance range is narrow, boost.
+  const contrast = contrastRange < 0.45 ? 1.25 : 1.05;
+  // Saturation: aim for healthy 0.35; bump more if flat.
+  const saturation = meanSat < 0.18 ? 1.35 : meanSat < 0.3 ? 1.15 : 1.05;
+  // Temperature: if image leans blue, warm it (and vice-versa).
+  const temperature = Math.max(-0.3, Math.min(0.3, (meanR - meanB) * -1.2));
+
+  return { exposure, contrast, saturation, temperature, dLogM: assumeDLogM };
+}
 
 export interface SceneHandle {
   setVideo(video: HTMLVideoElement): void;
@@ -164,6 +206,7 @@ const FRAG = /* glsl */`
   uniform float uContrast;    // 0..2, 1 = neutral
   uniform float uSaturation;  // 0..2, 1 = neutral
   uniform float uTemperature; // -1..+1, warm+/cool-
+  uniform int   uDLogM;       // 1 = apply D-Log M → Rec.709 tonemap
   uniform vec2  uTitlePos;    // title box anchor (x,y) in UV space
   uniform vec2  uTitleSize;   // title box size (w,h) in UV fraction
   const float PI = 3.14159265358979;
@@ -212,6 +255,14 @@ const FRAG = /* glsl */`
     }
 
     // --- Color grading (applied to the video before overlays) ---
+    if (uDLogM == 1) {
+      // D-Log M → Rec.709 approximation: inverse-gamma + black lift + saturation restore.
+      // Not the official DJI LUT, but close enough to make logged footage readable.
+      col.rgb = pow(col.rgb, vec3(1.0 / 1.75));
+      col.rgb = (col.rgb - 0.12) * 1.55;
+      float dlm_luma = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
+      col.rgb = mix(vec3(dlm_luma), col.rgb, 1.3);
+    }
     col.rgb *= exp2(uExposure);
     col.rgb = (col.rgb - 0.5) * uContrast + 0.5;
     float luma = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
@@ -337,12 +388,15 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       uContrast:      { value: 1 },
       uSaturation:    { value: 1 },
       uTemperature:   { value: 0 },
+      uDLogM:         { value: 0 },
     },
   });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
   scene.add(quad);
 
-  const LENS_IDX: Record<LensName, number> = { wide: 0, ultraWide: 1, asteroid: 2, rabbitHole: 3 };
+  // Shader knows four projection maths: indices 0=pinhole (FPV/Wide/UltraWide differ only by FOV),
+  // 1=also pinhole (kept for legacy), 2=asteroid, 3=rabbit-hole. So fpv + wide + ultraWide all map to 0.
+  const LENS_IDX: Record<LensName, number> = { fpv: 0, wide: 0, ultraWide: 0, asteroid: 2, rabbitHole: 3 };
 
   let videoEl: HTMLVideoElement | null = null;
   let preset: PresetName = 'orbit';
@@ -544,6 +598,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       material.uniforms.uContrast.value = adj.contrast;
       material.uniforms.uSaturation.value = adj.saturation;
       material.uniforms.uTemperature.value = adj.temperature;
+      material.uniforms.uDLogM.value = adj.dLogM ? 1 : 0;
     },
     setKeyframes(frames) { keyframes = frames.slice().sort((a, b) => a.t - b.t); },
     captureState() {

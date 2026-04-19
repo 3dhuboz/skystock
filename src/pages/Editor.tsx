@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Palette, Monitor, Smartphone, Square } from 'lucide-react';
-import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle } from '../lib/editor';
+import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle, computeAutoColor } from '../lib/editor';
 import { getVideo } from '../lib/api';
 import { Video } from '../lib/types';
 
@@ -704,23 +704,49 @@ export default function Editor() {
           ) : null}
 
           {activeTab === 'color' ? (
-            <div className="flex items-center gap-5 flex-1">
+            <div className="flex items-center gap-3 flex-1">
+              <button
+                onClick={() => {
+                  const v = videoElRef.current;
+                  if (!v) return;
+                  setColor({ ...computeAutoColor(v, color.dLogM), dLogM: color.dLogM });
+                }}
+                disabled={phase !== 'ready'}
+                className="px-3 h-8 rounded-md bg-ember-500/20 text-ember-300 border border-ember-500/40 hover:bg-ember-500/30 text-xs font-medium transition-colors disabled:opacity-40 flex-shrink-0"
+                title="Sample the current frame and derive exposure/contrast/saturation/temperature"
+              >
+                Auto
+              </button>
+              <button
+                onClick={() => setColor({ ...color, dLogM: !color.dLogM })}
+                disabled={phase !== 'ready'}
+                className={
+                  'px-3 h-8 rounded-md text-xs font-medium transition-colors flex-shrink-0 border ' +
+                  (color.dLogM
+                    ? 'bg-sky-500/20 text-sky-200 border-sky-500/40'
+                    : 'bg-sky-900/30 text-sky-400 border-sky-800/40 hover:bg-sky-800/40')
+                }
+                title="Apply D-Log M → Rec.709 tonemap (toggle for DJI log footage)"
+              >
+                D-Log M
+              </button>
+              <div className="w-px h-5 bg-sky-800/50 flex-shrink-0" />
               {([
-                { key: 'exposure',    label: 'Exposure',   min: -2, max: 2, step: 0.05, def: 0 },
-                { key: 'contrast',    label: 'Contrast',   min:  0, max: 2, step: 0.05, def: 1 },
-                { key: 'saturation',  label: 'Saturation', min:  0, max: 2, step: 0.05, def: 1 },
-                { key: 'temperature', label: 'Warm / Cool', min: -1, max: 1, step: 0.05, def: 0 },
+                { key: 'exposure',    label: 'Exp',  min: -2, max: 2, step: 0.05 },
+                { key: 'contrast',    label: 'Con',  min:  0, max: 2, step: 0.05 },
+                { key: 'saturation',  label: 'Sat',  min:  0, max: 2, step: 0.05 },
+                { key: 'temperature', label: 'Temp', min: -1, max: 1, step: 0.05 },
               ] as const).map(s => (
-                <label key={s.key} className="flex items-center gap-2 text-xs">
-                  <span className="text-sky-400 w-20 flex-shrink-0">{s.label}</span>
+                <label key={s.key} className="flex items-center gap-1.5 text-xs flex-shrink-0">
+                  <span className="text-sky-500 w-7 font-mono uppercase">{s.label}</span>
                   <input
                     type="range"
                     min={s.min} max={s.max} step={s.step}
                     value={color[s.key]}
                     onChange={(e) => setColor({ ...color, [s.key]: Number(e.target.value) })}
-                    className="w-24 accent-ember-500"
+                    className="w-20 accent-ember-500"
                   />
-                  <span className="font-mono text-sky-500 tabular-nums w-10 text-right">
+                  <span className="font-mono text-sky-400 tabular-nums w-9 text-right">
                     {color[s.key] >= 0 ? '+' : ''}{color[s.key].toFixed(2)}
                   </span>
                 </label>
