@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge } from 'lucide-react';
-import { PRESETS, PresetName, LENSES, LensName, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle } from '../lib/editor';
+import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2 } from 'lucide-react';
+import { PRESETS, PresetName, LENSES, LensName, Keyframe, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle } from '../lib/editor';
 import { getVideo } from '../lib/api';
 import { Video } from '../lib/types';
 
@@ -23,6 +23,7 @@ export default function Editor() {
   const [playhead, setPlayhead] = useState<number>(0);
   const [trimIn, setTrimIn] = useState<number>(0);
   const [trimOut, setTrimOut] = useState<number>(0);
+  const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const playheadRafRef = useRef<number>(0);
   const [playing, setPlaying] = useState(false);
   const [exportBytes, setExportBytes] = useState(0);
@@ -131,6 +132,11 @@ export default function Editor() {
     sceneRef.current?.setTrim(trimIn, trimOut);
   }, [trimIn, trimOut]);
 
+  // Push keyframes to the scene
+  useEffect(() => {
+    sceneRef.current?.setKeyframes(keyframes);
+  }, [keyframes]);
+
   // Watch playhead + enforce loop between trim handles during preview (not during export).
   useEffect(() => {
     const tick = () => {
@@ -220,6 +226,27 @@ export default function Editor() {
   const seekTo = useCallback((sec: number) => {
     if (videoElRef.current) videoElRef.current.currentTime = Math.max(0, Math.min(duration, sec));
   }, [duration]);
+
+  const addKeyframe = useCallback(() => {
+    const s = sceneRef.current;
+    const v = videoElRef.current;
+    if (!s || !v) return;
+    const st = s.captureState();
+    const newKf: Keyframe = { t: v.currentTime, yaw: st.yaw, pitch: st.pitch, zoom: st.zoom, lens: st.lens };
+    setKeyframes(prev => {
+      // Replace any existing keyframe within 0.2s of this time.
+      const filtered = prev.filter(k => Math.abs(k.t - newKf.t) > 0.2);
+      return [...filtered, newKf].sort((a, b) => a.t - b.t);
+    });
+    // Bake drag offsets into the keyframe by resetting them.
+    s.resetFrame();
+  }, []);
+
+  const deleteKeyframe = useCallback((t: number) => {
+    setKeyframes(prev => prev.filter(k => k.t !== t));
+  }, []);
+
+  const clearKeyframes = useCallback(() => setKeyframes([]), []);
 
   const trimDuration = Math.max(0, trimOut - trimIn);
 
@@ -327,16 +354,18 @@ export default function Editor() {
         ) : null}
       </div>
 
-      {/* Timeline: scrub + trim handles */}
+      {/* Timeline: scrub + trim handles + keyframe markers */}
       {duration > 0 ? (
         <Timeline
           duration={duration}
           playhead={playhead}
           trimIn={trimIn}
           trimOut={trimOut}
+          keyframes={keyframes}
           disabled={phase === 'exporting'}
           onSeek={seekTo}
           onTrimChange={(a, b) => { setTrimIn(a); setTrimOut(b); }}
+          onDeleteKeyframe={deleteKeyframe}
         />
       ) : null}
 
@@ -436,6 +465,42 @@ export default function Editor() {
             Speed bakes into the export
           </div>
         </div>
+        {/* Row 4: keyframes */}
+        <div className="flex items-center gap-3 overflow-x-auto">
+          <div className="text-xs text-sky-500 uppercase font-mono flex-shrink-0 pr-2 flex items-center gap-1.5 w-32 pl-[72px]">
+            <Diamond className="w-3.5 h-3.5" />
+            Keyframes
+          </div>
+          <button
+            onClick={addKeyframe}
+            disabled={phase !== 'ready'}
+            className="px-4 py-2 rounded-lg text-sm font-medium transition-all flex-shrink-0 bg-ember-500/20 text-ember-300 border border-ember-500/40 hover:bg-ember-500/30 disabled:opacity-40"
+            title="Capture current frame (angle + zoom + lens) at the playhead. Overrides the motion preset."
+          >
+            <Diamond className="w-3.5 h-3.5 fill-current" />
+            Add @ {formatTime(playhead)}
+          </button>
+          {keyframes.length > 0 ? (
+            <button
+              onClick={clearKeyframes}
+              disabled={phase !== 'ready'}
+              className="btn-ghost text-xs flex-shrink-0 disabled:opacity-40"
+              title="Remove all keyframes — the motion preset takes over again."
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Clear all
+            </button>
+          ) : null}
+          <div className="text-xs text-sky-500 font-mono flex-shrink-0">
+            {keyframes.length === 0
+              ? 'No keyframes — preset drives the camera'
+              : `${keyframes.length} keyframe${keyframes.length === 1 ? '' : 's'} override the preset`}
+          </div>
+          <div className="flex-1" />
+          <div className="text-xs text-sky-600 font-mono hidden md:block flex-shrink-0">
+            Shift-click a diamond to delete
+          </div>
+        </div>
       </footer>
     </div>
   );
@@ -452,12 +517,14 @@ interface TimelineProps {
   playhead: number;
   trimIn: number;
   trimOut: number;
+  keyframes: Keyframe[];
   disabled: boolean;
   onSeek: (sec: number) => void;
   onTrimChange: (a: number, b: number) => void;
+  onDeleteKeyframe: (t: number) => void;
 }
 
-function Timeline({ duration, playhead, trimIn, trimOut, disabled, onSeek, onTrimChange }: TimelineProps) {
+function Timeline({ duration, playhead, trimIn, trimOut, keyframes, disabled, onSeek, onTrimChange, onDeleteKeyframe }: TimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<'in' | 'out' | 'scrub' | null>(null);
 
@@ -540,6 +607,22 @@ function Timeline({ duration, playhead, trimIn, trimOut, disabled, onSeek, onTri
         >
           <div className="h-5 w-0.5 bg-ember-900/60" />
         </div>
+        {/* Keyframe diamonds — click seeks, shift-click deletes */}
+        {keyframes.map((kf) => (
+          <div
+            key={kf.t}
+            className="absolute top-1/2 w-0 h-0 -translate-x-1/2 -translate-y-1/2 z-20 cursor-pointer group"
+            style={{ left: `${toPct(kf.t)}%` }}
+            title={`${formatTime(kf.t)} — click to seek, shift-click to delete`}
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              if (e.shiftKey) { onDeleteKeyframe(kf.t); return; }
+              onSeek(kf.t);
+            }}
+          >
+            <div className="w-3 h-3 bg-emerald-400 rotate-45 border border-emerald-100 shadow-lg group-hover:scale-125 transition-transform" />
+          </div>
+        ))}
         {/* Playhead */}
         <div
           className="absolute top-[-6px] bottom-[-6px] w-0.5 bg-white pointer-events-none z-20 shadow"

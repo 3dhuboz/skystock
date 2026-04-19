@@ -11,6 +11,43 @@ export const PRESETS: { id: PresetName; label: string; description: string }[] =
 
 export type LensName = 'wide' | 'ultraWide' | 'asteroid' | 'rabbitHole';
 
+export interface Keyframe {
+  /** Absolute time in seconds (on the video timeline). */
+  t: number;
+  yaw: number;
+  pitch: number;
+  zoom: number;
+  lens: LensName;
+}
+
+function lerpAngle(a: number, b: number, t: number): number {
+  const diff = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+  return a + diff * t;
+}
+
+/** Evaluate the keyframe track at time t. Holds at first/last keyframe outside the range.
+ *  Returns null if the keyframes array is empty. */
+export function evalKeyframes(frames: Keyframe[], t: number): Keyframe | null {
+  if (frames.length === 0) return null;
+  if (frames.length === 1) return frames[0];
+  const sorted = frames.slice().sort((a, b) => a.t - b.t);
+  if (t <= sorted[0].t) return sorted[0];
+  if (t >= sorted[sorted.length - 1].t) return sorted[sorted.length - 1];
+  let i = 0;
+  while (i < sorted.length - 1 && sorted[i + 1].t <= t) i++;
+  const a = sorted[i];
+  const b = sorted[i + 1];
+  const k = (t - a.t) / Math.max(0.0001, b.t - a.t);
+  return {
+    t,
+    yaw:   lerpAngle(a.yaw, b.yaw, k),
+    pitch: a.pitch + (b.pitch - a.pitch) * k,
+    zoom:  a.zoom + (b.zoom - a.zoom) * k,
+    // Lens snaps — cross-projection blending is a future enhancement.
+    lens:  k < 0.5 ? a.lens : b.lens,
+  };
+}
+
 export const LENSES: { id: LensName; label: string; fov: number; pitchBias: number; description: string }[] = [
   { id: 'wide',       label: 'Wide',       fov:  75, pitchBias: 0,               description: 'Standard perspective — your reframed view.' },
   { id: 'ultraWide',  label: 'Ultra Wide', fov: 120, pitchBias: 0,               description: 'Expanded field of view. More scene in every frame.' },
@@ -58,6 +95,13 @@ export interface SceneHandle {
   getLens(): LensName;
   /** Set trim window (in seconds). The preset's t normalizes over this window. */
   setTrim(inSec: number, outSec: number): void;
+  /** Set the keyframe track. When non-empty, keyframes drive the camera and lens
+   *  (preset is ignored). Manual drag still applies as an offset on top. */
+  setKeyframes(frames: Keyframe[]): void;
+  /** Returns the FINAL camera state at the current video time, including both
+   *  the preset / keyframe interpolation AND the user's manual drag offsets.
+   *  Use this to snapshot a keyframe. */
+  captureState(): { yaw: number; pitch: number; zoom: number; lens: LensName };
   /** Resize the WebGL render target (output resolution). */
   setOutputSize(width: number, height: number): void;
   /** Reset user's manual drag offsets back to the pure preset path. */
@@ -200,6 +244,12 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   let zoom = 1.0;  // < 1 zooms in; > 1 zooms out
   let trimIn = 0;
   let trimOut = Infinity;
+  let keyframes: Keyframe[] = [];
+  // Cache the interpolated base state for captureState().
+  let lastBaseYaw = 0;
+  let lastBasePitch = 0;
+  let lastBaseZoom = 1.0;
+  let lastBaseLens: LensName = 'wide';
   const PITCH_LIMIT = Math.PI / 2 - 0.05;
   const ZOOM_MIN = 0.3;
   const ZOOM_MAX = 3.0;
@@ -249,26 +299,59 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
 
   function loop() {
     raf = requestAnimationFrame(loop);
-    const lensDef = LENSES.find(l => l.id === lens)!;
-    const lensIdx = ['wide', 'ultraWide', 'asteroid', 'rabbitHole'].indexOf(lens);
-    material.uniforms.uLens.value = lensIdx;
-    material.uniforms.uFovRad.value = (lensDef.fov * Math.PI) / 180;
-    material.uniforms.uZoom.value = zoom;
 
     if (videoEl && videoEl.readyState >= 2 && videoEl.duration) {
-      const outSec = trimOut === Infinity ? videoEl.duration : Math.min(trimOut, videoEl.duration);
-      const win = Math.max(0.01, outSec - trimIn);
-      const t = Math.min(1, Math.max(0, (videoEl.currentTime - trimIn) / win));
-      const { yaw, pitch, roll } = cameraFor(preset, t);
-      // For perspective lenses only, add lens pitchBias (asteroid/rabbitHole already bake the
-      // looking-down/up behaviour into their projection math — no pitch bias needed there).
+      let baseYaw: number;
+      let basePitch: number;
+      let roll = 0;
+      let baseZoom: number;
+      let effectiveLens: LensName;
+
+      const kf = evalKeyframes(keyframes, videoEl.currentTime);
+      if (kf) {
+        // Keyframes override the preset path.
+        baseYaw = kf.yaw;
+        basePitch = kf.pitch;
+        baseZoom = kf.zoom;
+        effectiveLens = kf.lens;
+      } else {
+        // Preset-driven — t normalized to trim window.
+        const outSec = trimOut === Infinity ? videoEl.duration : Math.min(trimOut, videoEl.duration);
+        const win = Math.max(0.01, outSec - trimIn);
+        const tp = Math.min(1, Math.max(0, (videoEl.currentTime - trimIn) / win));
+        const c = cameraFor(preset, tp);
+        baseYaw = c.yaw;
+        basePitch = c.pitch;
+        roll = c.roll;
+        baseZoom = 1.0;
+        effectiveLens = lens;
+      }
+
+      const lensDef = LENSES.find(l => l.id === effectiveLens)!;
+      const lensIdx = ['wide', 'ultraWide', 'asteroid', 'rabbitHole'].indexOf(effectiveLens);
+      material.uniforms.uLens.value = lensIdx;
+      material.uniforms.uFovRad.value = (lensDef.fov * Math.PI) / 180;
+      material.uniforms.uZoom.value = baseZoom * zoom;
+
       const pitchBias = lensIdx >= 2 ? 0 : lensDef.pitchBias;
-      let finalPitch = pitch + pitchOffset + pitchBias;
+      let finalPitch = basePitch + pitchOffset + pitchBias;
       if (finalPitch > PITCH_LIMIT) finalPitch = PITCH_LIMIT;
       if (finalPitch < -PITCH_LIMIT) finalPitch = -PITCH_LIMIT;
-      material.uniforms.uYaw.value = yaw + yawOffset;
+      material.uniforms.uYaw.value = baseYaw + yawOffset;
       material.uniforms.uPitch.value = finalPitch;
       material.uniforms.uRoll.value = roll;
+
+      lastBaseYaw = baseYaw;
+      lastBasePitch = basePitch;
+      lastBaseZoom = baseZoom;
+      lastBaseLens = effectiveLens;
+    } else {
+      // Pre-video: just render whatever the static lens is.
+      const lensDef = LENSES.find(l => l.id === lens)!;
+      const lensIdx = ['wide', 'ultraWide', 'asteroid', 'rabbitHole'].indexOf(lens);
+      material.uniforms.uLens.value = lensIdx;
+      material.uniforms.uFovRad.value = (lensDef.fov * Math.PI) / 180;
+      material.uniforms.uZoom.value = zoom;
     }
     renderer.render(scene, camera);
   }
@@ -290,6 +373,15 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     setLens(l) { lens = l; },
     getLens() { return lens; },
     setTrim(inSec, outSec) { trimIn = Math.max(0, inSec); trimOut = outSec; },
+    setKeyframes(frames) { keyframes = frames.slice().sort((a, b) => a.t - b.t); },
+    captureState() {
+      return {
+        yaw:   lastBaseYaw + yawOffset,
+        pitch: Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, lastBasePitch + pitchOffset)),
+        zoom:  lastBaseZoom * zoom,
+        lens:  lastBaseLens,
+      };
+    },
     setOutputSize(w, h) {
       renderer.setSize(w, h, false);
       material.uniforms.uAspect.value = w / h;
