@@ -495,6 +495,93 @@ app.use('/admin/*', async (c, next) => {
   await next();
 });
 
+// Integration health — probes each third-party service with its configured credentials
+app.get('/admin/integrations/health', async (c) => {
+  const env = c.env;
+  const timeout = (ms: number) => new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
+
+  async function probePayPal() {
+    try {
+      if (!env.PAYPAL_CLIENT_ID || !env.PAYPAL_CLIENT_SECRET) {
+        return { status: 'missing', detail: 'Credentials not set' };
+      }
+      const auth = btoa(`${env.PAYPAL_CLIENT_ID}:${env.PAYPAL_CLIENT_SECRET}`);
+      const res = await Promise.race([
+        fetch('https://api-m.sandbox.paypal.com/v1/oauth2/token', {
+          method: 'POST',
+          headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'grant_type=client_credentials',
+        }),
+        timeout(8000),
+      ]);
+      if (!res.ok) return { status: 'error', detail: `HTTP ${res.status}` };
+      const data = await res.json() as any;
+      return data.access_token ? { status: 'ok', detail: 'Sandbox token issued' } : { status: 'error', detail: 'No token returned' };
+    } catch (e: any) {
+      return { status: 'error', detail: e.message || 'Network error' };
+    }
+  }
+
+  async function probeClerk() {
+    try {
+      if (!env.CLERK_SECRET_KEY) return { status: 'missing', detail: 'CLERK_SECRET_KEY not set' };
+      const res = await Promise.race([
+        fetch('https://api.clerk.com/v1/users?limit=1', {
+          headers: { Authorization: `Bearer ${env.CLERK_SECRET_KEY}` },
+        }),
+        timeout(8000),
+      ]);
+      if (!res.ok) return { status: 'error', detail: `HTTP ${res.status}` };
+      return { status: 'ok', detail: 'API reachable' };
+    } catch (e: any) {
+      return { status: 'error', detail: e.message || 'Network error' };
+    }
+  }
+
+  async function probeResend() {
+    try {
+      if (!env.RESEND_API_KEY) return { status: 'missing', detail: 'RESEND_API_KEY not set' };
+      const res = await Promise.race([
+        fetch('https://api.resend.com/domains', {
+          headers: { Authorization: `Bearer ${env.RESEND_API_KEY}` },
+        }),
+        timeout(8000),
+      ]);
+      if (res.status === 401 || res.status === 403) return { status: 'error', detail: `Auth rejected (HTTP ${res.status})` };
+      if (!res.ok) return { status: 'error', detail: `HTTP ${res.status}` };
+      return { status: 'ok', detail: 'API reachable' };
+    } catch (e: any) {
+      return { status: 'error', detail: e.message || 'Network error' };
+    }
+  }
+
+  async function probeR2() {
+    try {
+      if (!env.R2) return { status: 'missing', detail: 'R2 binding not configured' };
+      await env.R2.head('__healthcheck__').catch(() => null);
+      return { status: 'ok', detail: 'Bucket reachable' };
+    } catch (e: any) {
+      return { status: 'error', detail: e.message || 'R2 error' };
+    }
+  }
+
+  async function probeD1() {
+    try {
+      if (!env.DB) return { status: 'missing', detail: 'D1 binding not configured' };
+      await env.DB.prepare('SELECT 1 as x').first();
+      return { status: 'ok', detail: 'Database reachable' };
+    } catch (e: any) {
+      return { status: 'error', detail: e.message || 'D1 error' };
+    }
+  }
+
+  const [paypal, clerk, resend, r2, d1] = await Promise.all([
+    probePayPal(), probeClerk(), probeResend(), probeR2(), probeD1(),
+  ]);
+
+  return c.json({ paypal, clerk, resend, r2, d1, checked_at: Date.now() });
+});
+
 app.get('/admin/dashboard', async (c) => {
   const [totalVideos, publishedVideos, totalOrders, revenue, downloads, recentOrders, topVideos] = await Promise.all([
     c.env.DB.prepare("SELECT COUNT(*) as c FROM videos WHERE status != 'archived'").first() as any,
