@@ -16,7 +16,7 @@
  */
 
 import { execSync } from 'child_process';
-import { readFileSync, readdirSync, statSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, readdirSync, statSync, existsSync, mkdirSync, createReadStream } from 'fs';
 import { join, basename, extname, resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createInterface } from 'readline';
@@ -115,11 +115,15 @@ async function uploadFile(videoId, filePath, type) {
   );
 
   // Step 2: PUT directly to R2 via presigned URL (bypasses worker entirely)
-  const fileBuffer = readFileSync(filePath);
+  // Stream the body so 4K/multi-GB files don't blow Node's buffer cap.
   const putRes = await fetch(uploadUrl, {
     method: 'PUT',
-    headers: { 'Content-Type': signedCt || contentType },
-    body: fileBuffer,
+    headers: {
+      'Content-Type': signedCt || contentType,
+      'Content-Length': String(fileSize),
+    },
+    body: createReadStream(filePath),
+    duplex: 'half',
   });
 
   if (!putRes.ok) {
