@@ -1,13 +1,28 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, X, Film, Image, FileVideo, Check } from 'lucide-react';
+import { Upload, X, Film, Image, FileVideo, Check, Sparkles, Loader2, Wand2, Aperture } from 'lucide-react';
+import { useAuth } from '@clerk/clerk-react';
 import { createVideo, uploadVideoFile } from '../../lib/api';
 import toast from 'react-hot-toast';
 
+interface AiFillResponse {
+  title?: string;
+  description?: string;
+  location?: string;
+  tags?: string[];
+  price_cents?: number;
+  error?: string;
+}
+
 export default function AdminUpload() {
   const navigate = useNavigate();
+  const { getToken } = useAuth();
   const [submitting, setSubmitting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [aiFilling, setAiFilling] = useState(false);
+  const [thumbBusy, setThumbBusy] = useState(false);
+  const [previewBusy, setPreviewBusy] = useState(false);
+  const [previewProgress, setPreviewProgress] = useState(0);
 
   const [form, setForm] = useState({
     title: '',
@@ -37,6 +52,296 @@ export default function AdminUpload() {
     };
   }
 
+  // --- AI Fill: extract a frame, send to Claude, populate form -------------
+  const extractFrame = useCallback(async (file: File): Promise<{ base64: string; mediaType: string }> => {
+    const url = URL.createObjectURL(file);
+    try {
+      const video = document.createElement('video');
+      video.preload = 'auto';
+      video.muted = true;
+      video.playsInline = true;
+      video.crossOrigin = 'anonymous';
+      video.src = url;
+
+      // Wait for metadata so we know duration + dimensions.
+      await new Promise<void>((resolve, reject) => {
+        video.onloadedmetadata = () => resolve();
+        video.onerror = () => reject(new Error('Could not load video metadata'));
+      });
+
+      // Seek to 25% through, or 2s, whichever is sooner — avoids black openers.
+      const target = Math.min(video.duration * 0.25, 2);
+      video.currentTime = isFinite(target) && target > 0 ? target : 0;
+      await new Promise<void>((resolve, reject) => {
+        video.onseeked = () => resolve();
+        video.onerror = () => reject(new Error('Could not seek video'));
+      });
+
+      // Downscale — equirectangular 4K is overkill for a vision prompt and slows the API.
+      const maxSide = 1280;
+      const scale = Math.min(1, maxSide / Math.max(video.videoWidth, video.videoHeight));
+      const w = Math.max(16, Math.round(video.videoWidth * scale));
+      const h = Math.max(16, Math.round(video.videoHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas context unavailable');
+      ctx.drawImage(video, 0, 0, w, h);
+
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+      const base64 = dataUrl.split(',')[1];
+      return { base64, mediaType: 'image/jpeg' };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }, []);
+
+  const extractImage = useCallback(async (file: File): Promise<{ base64: string; mediaType: string }> => {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = new globalThis.Image();
+      img.crossOrigin = 'anonymous';
+      img.src = url;
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Could not load image'));
+      });
+      const maxSide = 1280;
+      const scale = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.max(16, Math.round(img.naturalWidth * scale));
+      const h = Math.max(16, Math.round(img.naturalHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas context unavailable');
+      ctx.drawImage(img, 0, 0, w, h);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+      return { base64: dataUrl.split(',')[1], mediaType: 'image/jpeg' };
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }, []);
+
+  // --- Auto-thumbnail: grab a 16:9 forward-facing slice from the 360° equirect ----
+  // Draws a centered crop (60% width × full height) onto a 1920x1080 canvas, then
+  // overlays a subtle SKYSTOCK FPV watermark so the thumbnail matches the preview.
+  async function generateThumbnail() {
+    const video = files.original;
+    if (!video) { toast.error('Attach the original video first'); return; }
+    setThumbBusy(true);
+    const t = toast.loading('Extracting thumbnail frame…');
+    const url = URL.createObjectURL(video);
+    try {
+      const v = document.createElement('video');
+      v.preload = 'auto';
+      v.muted = true;
+      v.playsInline = true;
+      v.src = url;
+      await new Promise<void>((resolve, reject) => {
+        v.onloadedmetadata = () => resolve();
+        v.onerror = () => reject(new Error('Could not load video'));
+      });
+      const target = Math.min(v.duration * 0.25, 2);
+      v.currentTime = isFinite(target) && target > 0 ? target : 0;
+      await new Promise<void>((resolve, reject) => {
+        v.onseeked = () => resolve();
+        v.onerror = () => reject(new Error('Seek failed'));
+      });
+
+      const OUT_W = 1920, OUT_H = 1080;
+      const canvas = document.createElement('canvas');
+      canvas.width = OUT_W;
+      canvas.height = OUT_H;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas unavailable');
+
+      // Center-crop a 16:9 forward window from the equirectangular frame.
+      // For a standard equirect, the forward direction is centered horizontally; we grab
+      // the middle ~60% of width and full height (which is already the horizon band).
+      const cropWFrac = 0.6;
+      const sw = v.videoWidth * cropWFrac;
+      const sh = Math.min(v.videoHeight, sw * (OUT_H / OUT_W));
+      const sx = (v.videoWidth - sw) / 2;
+      const sy = (v.videoHeight - sh) / 2;
+      ctx.drawImage(v, sx, sy, sw, sh, 0, 0, OUT_W, OUT_H);
+
+      // Watermark — match the preview look
+      ctx.save();
+      ctx.globalAlpha = 0.28;
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '600 48px "DM Sans", system-ui, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.shadowColor = 'rgba(0,0,0,0.5)';
+      ctx.shadowBlur = 8;
+      ctx.fillText('SkyStock FPV', OUT_W - 32, OUT_H - 32);
+      ctx.restore();
+
+      const blob: Blob = await new Promise((resolve, reject) =>
+        canvas.toBlob(b => b ? resolve(b) : reject(new Error('Blob encode failed')), 'image/jpeg', 0.9)
+      );
+      const stem = video.name.replace(/\.[^.]+$/, '');
+      const thumbFile = new File([blob], `${stem}-thumb.jpg`, { type: 'image/jpeg' });
+      setFiles(prev => ({ ...prev, thumbnail: thumbFile }));
+      toast.success('Thumbnail ready', { id: t });
+    } catch (e: any) {
+      toast.error(`Thumbnail failed: ${e.message || 'unknown'}`, { id: t });
+    } finally {
+      URL.revokeObjectURL(url);
+      setThumbBusy(false);
+    }
+  }
+
+  // --- Auto-preview: record a 6s watermarked teaser via MediaRecorder + canvas.captureStream
+  async function generatePreview() {
+    const video = files.original;
+    if (!video) { toast.error('Attach the original video first'); return; }
+    setPreviewBusy(true);
+    setPreviewProgress(0);
+    const t = toast.loading('Recording watermarked preview…');
+    const url = URL.createObjectURL(video);
+    try {
+      const v = document.createElement('video');
+      v.preload = 'auto';
+      v.muted = true;
+      v.playsInline = true;
+      v.src = url;
+      await new Promise<void>((resolve, reject) => {
+        v.onloadedmetadata = () => resolve();
+        v.onerror = () => reject(new Error('Could not load video'));
+      });
+
+      // Downscale for a manageable preview size (longest edge 1280px).
+      const maxSide = 1280;
+      const scale = Math.min(1, maxSide / Math.max(v.videoWidth, v.videoHeight));
+      const W = Math.max(16, Math.round(v.videoWidth * scale));
+      const H = Math.max(16, Math.round(v.videoHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas unavailable');
+
+      // Pick a watermarked MIME that MediaRecorder will actually take
+      const candidates = ['video/mp4;codecs=avc1.42E01E', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+      const mime = candidates.find(m => (window as any).MediaRecorder?.isTypeSupported?.(m)) || '';
+      if (!mime) throw new Error('MediaRecorder not supported in this browser');
+
+      const stream = canvas.captureStream(30);
+      const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 3_000_000 });
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+
+      // Start playback from 10% in so we skip black/props intros
+      const start = Math.min(v.duration * 0.1, 1);
+      const end = Math.min(start + 6, v.duration - 0.1);
+      v.currentTime = start;
+      await new Promise<void>((resolve, reject) => {
+        v.onseeked = () => resolve();
+        v.onerror = () => reject(new Error('Seek failed'));
+      });
+
+      let stopped = false;
+      const stopAll = () => {
+        if (stopped) return;
+        stopped = true;
+        try { recorder.state !== 'inactive' && recorder.stop(); } catch {}
+        try { v.pause(); } catch {}
+      };
+
+      recorder.start();
+      await v.play();
+
+      const drawLoop = () => {
+        if (stopped) return;
+        ctx.drawImage(v, 0, 0, W, H);
+        // Watermark
+        ctx.save();
+        ctx.globalAlpha = 0.35;
+        ctx.fillStyle = '#ffffff';
+        const fontPx = Math.max(18, Math.round(H * 0.045));
+        ctx.font = `600 ${fontPx}px "DM Sans", system-ui, sans-serif`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'bottom';
+        ctx.shadowColor = 'rgba(0,0,0,0.5)';
+        ctx.shadowBlur = 6;
+        ctx.fillText('SkyStock FPV', W - 20, H - 16);
+        ctx.restore();
+
+        const done = v.currentTime >= end || v.ended;
+        setPreviewProgress(Math.min(100, Math.round(((v.currentTime - start) / (end - start)) * 100)));
+        if (done) stopAll();
+        else requestAnimationFrame(drawLoop);
+      };
+      drawLoop();
+
+      const blob: Blob = await new Promise((resolve) => {
+        recorder.onstop = () => resolve(new Blob(chunks, { type: mime }));
+      });
+
+      const stem = video.name.replace(/\.[^.]+$/, '');
+      const ext = mime.includes('mp4') ? 'mp4' : 'webm';
+      const previewFile = new File([blob], `${stem}-preview.${ext}`, { type: mime });
+      setFiles(prev => ({ ...prev, preview: previewFile }));
+      toast.success(`Preview ready (${(blob.size / (1024 * 1024)).toFixed(1)} MB)`, { id: t });
+    } catch (e: any) {
+      toast.error(`Preview failed: ${e.message || 'unknown'}`, { id: t });
+    } finally {
+      URL.revokeObjectURL(url);
+      setPreviewBusy(false);
+      setPreviewProgress(0);
+    }
+  }
+
+  async function runAiFill() {
+    const source = files.thumbnail || files.original;
+    if (!source) {
+      toast.error('Attach a video (or thumbnail) first so AI has something to look at');
+      return;
+    }
+    setAiFilling(true);
+    const pending = toast.loading('Extracting frame…');
+    try {
+      const { base64, mediaType } = source.type.startsWith('image/')
+        ? await extractImage(source)
+        : await extractFrame(source);
+
+      toast.loading('Asking Claude for a listing…', { id: pending });
+      const token = await getToken();
+      const res = await fetch('/api/admin/ai-fill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          imageBase64: base64,
+          mediaType,
+          hint: form.location.trim(),
+          filename: source.name,
+        }),
+      });
+      const data = (await res.json()) as AiFillResponse;
+      if (!res.ok || data.error) {
+        toast.error(data.error || `AI fill failed (HTTP ${res.status})`, { id: pending });
+        return;
+      }
+
+      setForm(prev => ({
+        ...prev,
+        title: data.title || prev.title,
+        description: data.description || prev.description,
+        location: data.location || prev.location,
+        tags: Array.isArray(data.tags) && data.tags.length ? data.tags.join(', ') : prev.tags,
+        price: Number.isFinite(data.price_cents) ? (data.price_cents! / 100).toFixed(2) : prev.price,
+      }));
+      toast.success('AI suggestions applied — review and edit', { id: pending });
+    } catch (e: any) {
+      toast.error(e.message || 'AI fill failed', { id: pending });
+    } finally {
+      setAiFilling(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.title) { toast.error('Title is required'); return; }
@@ -44,7 +349,6 @@ export default function AdminUpload() {
 
     setSubmitting(true);
     try {
-      // 1. Create video record
       const video = await createVideo({
         title: form.title,
         description: form.description,
@@ -56,7 +360,6 @@ export default function AdminUpload() {
         status: form.status,
       });
 
-      // 2. Upload files
       if (files.original) {
         await uploadVideoFile(video.id, files.original, 'original', pct => setUploadProgress(p => ({ ...p, original: pct })));
       }
@@ -78,16 +381,42 @@ export default function AdminUpload() {
 
   const fileZone = (type: 'original' | 'preview' | 'thumbnail', label: string, accept: string, icon: React.ReactNode) => (
     <div className="glass-card p-6">
-      <div className="flex items-center gap-3 mb-4">
-        {icon}
-        <div>
-          <h3 className="font-display font-semibold text-white">{label}</h3>
-          <p className="text-xs text-sky-500">
-            {type === 'original' ? 'Full quality unwatermarked file' :
-             type === 'preview' ? 'Watermarked short preview clip' :
-             'Thumbnail image (16:9 ratio)'}
-          </p>
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-3 min-w-0">
+          {icon}
+          <div className="min-w-0">
+            <h3 className="font-display font-semibold text-white">{label}</h3>
+            <p className="text-xs text-sky-500">
+              {type === 'original' ? 'Full quality unwatermarked file' :
+               type === 'preview' ? 'Watermarked short preview clip' :
+               'Thumbnail image (16:9 ratio)'}
+            </p>
+          </div>
         </div>
+        {type === 'thumbnail' && (
+          <button
+            type="button"
+            onClick={generateThumbnail}
+            disabled={!files.original || thumbBusy}
+            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-display font-semibold text-ember-300 border border-ember-400/40 bg-ember-500/10 hover:bg-ember-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title={files.original ? 'Extract a forward-facing frame from the 360° master' : 'Attach the original video first'}
+          >
+            {thumbBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Aperture className="w-3 h-3" />}
+            Auto
+          </button>
+        )}
+        {type === 'preview' && (
+          <button
+            type="button"
+            onClick={generatePreview}
+            disabled={!files.original || previewBusy}
+            className="shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-display font-semibold text-ember-300 border border-ember-400/40 bg-ember-500/10 hover:bg-ember-500/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            title={files.original ? 'Record a 6s watermarked teaser' : 'Attach the original video first'}
+          >
+            {previewBusy ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+            {previewBusy ? `${previewProgress}%` : 'Auto'}
+          </button>
+        )}
       </div>
 
       {files[type] ? (
@@ -125,12 +454,58 @@ export default function AdminUpload() {
     </div>
   );
 
+  const hasSource = !!(files.thumbnail || files.original);
+
   return (
     <div className="page-enter max-w-4xl">
       <h1 className="font-display font-bold text-2xl text-white mb-2">Upload New Video</h1>
-      <p className="text-sky-500 text-sm mb-8">Add new FPV footage to your library</p>
+      <p className="text-sky-500 text-sm mb-8">
+        Add new FPV footage to your library. Attach the video, optionally type the location, then click <strong className="text-ember-300">AI Fill</strong> to auto-populate the rest.
+      </p>
 
       <form onSubmit={handleSubmit} className="space-y-8">
+        {/* AI Fill banner */}
+        <div
+          className="rounded-2xl p-4 flex items-center gap-4"
+          style={{
+            background: 'linear-gradient(135deg, rgba(56,189,248,0.12), rgba(249,115,22,0.12))',
+            border: '1px solid rgba(249,115,22,0.35)',
+          }}
+        >
+          <div
+            className="w-11 h-11 shrink-0 rounded-xl flex items-center justify-center"
+            style={{
+              background: 'linear-gradient(135deg, #38bdf8, #f97316)',
+              boxShadow: '0 0 20px rgba(249,115,22,0.35)',
+            }}
+          >
+            <Sparkles className="w-5 h-5 text-white" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="font-display font-semibold text-white">AI Fill</div>
+            <div className="text-xs text-sky-400 mt-0.5">
+              {hasSource
+                ? (form.location
+                    ? <>Using <span className="text-ember-300">&ldquo;{form.location}&rdquo;</span> as location hint. Claude will generate title, description, tags, and a suggested price.</>
+                    : 'Type a location like "Frenchville Flyover" or "Mt Archer" below for best results, or leave blank to let Claude guess from the frame.')
+                : 'Attach a video (or thumbnail) below, then come back here.'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={runAiFill}
+            disabled={!hasSource || aiFilling}
+            className="shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl font-display font-semibold text-sm text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02]"
+            style={{
+              background: 'linear-gradient(135deg, #f97316, #fb923c)',
+              boxShadow: '0 10px 24px -10px rgba(249,115,22,0.55)',
+            }}
+          >
+            {aiFilling ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {aiFilling ? 'Thinking…' : 'AI Fill'}
+          </button>
+        </div>
+
         {/* Metadata */}
         <div className="glass-card p-6 space-y-5">
           <div>
@@ -145,8 +520,10 @@ export default function AdminUpload() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <div>
-              <label className="block text-sm font-display font-medium text-sky-300 mb-2">Location</label>
-              <input name="location" value={form.location} onChange={handleChange} className="input-field" placeholder="e.g., Yeppoon, QLD" />
+              <label className="block text-sm font-display font-medium text-sky-300 mb-2">
+                Location <span className="text-[10px] font-mono text-ember-400 uppercase tracking-wider ml-1">· AI hint</span>
+              </label>
+              <input name="location" value={form.location} onChange={handleChange} className="input-field" placeholder='e.g., "Frenchville Flyover" or "Mt Archer"' />
             </div>
             <div>
               <label className="block text-sm font-display font-medium text-sky-300 mb-2">Tags (comma separated)</label>

@@ -12,6 +12,14 @@ interface Env {
   ADMIN_USER_IDS: string;
   SITE_URL: string;
   SITE_NAME: string;
+  ANTHROPIC_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
+  OPENROUTER_MODEL?: string;
+  UPLOAD_API_KEY?: string;
+  R2_ACCOUNT_ID?: string;
+  R2_ACCESS_KEY_ID?: string;
+  R2_SECRET_ACCESS_KEY?: string;
+  R2_BUCKET_NAME?: string;
 }
 
 type PagesFunction<E = Env> = (context: {

@@ -605,6 +605,142 @@ app.get('/admin/integrations/health', async (c) => {
   return c.json({ paypal, clerk, resend, r2, d1, checked_at: Date.now() });
 });
 
+// AI fill — send a frame image to a vision LLM and get back suggested listing metadata.
+// Prefers OpenRouter (cheaper, multi-model) and falls back to the Anthropic API direct.
+app.post('/admin/ai-fill', async (c) => {
+  const env = c.env;
+  const useOpenRouter = !!env.OPENROUTER_API_KEY;
+  const useAnthropic = !useOpenRouter && !!env.ANTHROPIC_API_KEY;
+  if (!useOpenRouter && !useAnthropic) {
+    return c.json({
+      error: 'No AI provider configured. Set OPENROUTER_API_KEY (preferred) or ANTHROPIC_API_KEY via: wrangler pages secret put OPENROUTER_API_KEY',
+    }, 500);
+  }
+
+  let body: { imageBase64?: string; mediaType?: string; hint?: string; filename?: string } = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON body' }, 400);
+  }
+  const { imageBase64, mediaType = 'image/jpeg', hint = '', filename = '' } = body;
+  if (!imageBase64) return c.json({ error: 'Missing imageBase64' }, 400);
+
+  const systemPrompt = `You are a listings assistant for SkyStock FPV, a marketplace for 360° FPV drone footage shot on the DJI Avata 360 across Central Queensland, Australia. You write short, punchy listings.
+
+Respond with STRICT JSON only — no prose, no markdown, no code fences. Schema:
+{
+  "title": string,              // 3-6 words, evocative, title case. E.g. "Sunrise Over The Gemfields"
+  "description": string,        // 1-2 sentences. Mention the scene, motion, light, and the 360° reframing hook
+  "location": string,           // city/region, "QLD" suffix if inferable. Empty string if unknown.
+  "tags": string[],             // 4-7 lowercase tags, single words or hyphenated. E.g. ["coast","sunset","golden-hour"]
+  "price_cents": number         // AUD price in cents. 2499 = $24.99. Use 2499-4999 based on scene quality/rarity.
+}`;
+
+  const userText = `Suggest listing metadata for this drone clip frame.
+${filename ? `Filename hint: ${filename}\n` : ''}${hint ? `Location hint (TRUST THIS — it's the exact Central QLD location the operator shot at, e.g. "Frenchville Flyover", "Mt Archer"): ${hint}\n` : ''}
+Rules:
+- If a location hint is given, use it verbatim for the "location" field (append ", QLD" if not already present).
+- Title may reference the hint (e.g. "Mt Archer Ridge Dive" when hint is "Mt Archer") but must still evoke the scene in the image.
+- Description should lean into the 360° reframing hook: one clip, reframe any angle.
+
+Respond with JSON only.`;
+
+  async function callOpenRouter(): Promise<{ text: string } | { error: string; status: number }> {
+    const model = env.OPENROUTER_MODEL || 'anthropic/claude-sonnet-4.5';
+    const dataUrl = `data:${mediaType};base64,${imageBase64}`;
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': env.SITE_URL || 'https://skystock.pages.dev',
+        'X-Title': env.SITE_NAME || 'SkyStock FPV',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 600,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: userText },
+              { type: 'image_url', image_url: { url: dataUrl } },
+            ],
+          },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      return { error: `OpenRouter HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`, status: 502 };
+    }
+    const data = await res.json() as any;
+    return { text: data?.choices?.[0]?.message?.content || '' };
+  }
+
+  async function callAnthropic(): Promise<{ text: string } | { error: string; status: number }> {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': env.ANTHROPIC_API_KEY!,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5',
+        max_tokens: 600,
+        system: systemPrompt,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: mediaType, data: imageBase64 } },
+              { type: 'text', text: userText },
+            ],
+          },
+        ],
+      }),
+    });
+    if (!res.ok) {
+      return { error: `Anthropic HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`, status: 502 };
+    }
+    const data = await res.json() as any;
+    return { text: data?.content?.[0]?.text || '' };
+  }
+
+  try {
+    const result = useOpenRouter ? await callOpenRouter() : await callAnthropic();
+    if ('error' in result) return c.json({ error: result.error }, result.status as 400 | 500 | 502);
+
+    const text = result.text;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) return c.json({ error: 'AI returned no JSON', raw: text.slice(0, 400) }, 502);
+
+    let parsed: any;
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch (e: any) {
+      return c.json({ error: `Failed to parse AI JSON: ${e.message}`, raw: jsonMatch[0].slice(0, 400) }, 502);
+    }
+
+    const tags: string[] = Array.isArray(parsed.tags)
+      ? parsed.tags.map((t: any) => String(t).toLowerCase().trim()).filter(Boolean).slice(0, 8)
+      : [];
+
+    return c.json({
+      title: String(parsed.title || '').slice(0, 120),
+      description: String(parsed.description || '').slice(0, 800),
+      location: String(parsed.location || '').slice(0, 80),
+      tags,
+      price_cents: Number.isFinite(parsed.price_cents) ? Math.max(0, Math.min(20000, Math.round(parsed.price_cents))) : 2999,
+      provider: useOpenRouter ? 'openrouter' : 'anthropic',
+    });
+  } catch (e: any) {
+    return c.json({ error: `AI fill failed: ${e.message || 'unknown'}` }, 500);
+  }
+});
+
 app.get('/admin/dashboard', async (c) => {
   const [totalVideos, publishedVideos, totalOrders, revenue, downloads, recentOrders, topVideos] = await Promise.all([
     c.env.DB.prepare("SELECT COUNT(*) as c FROM videos WHERE status != 'archived'").first() as any,
