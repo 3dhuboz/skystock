@@ -17,6 +17,7 @@ export default function Editor() {
   const [phase, setPhase] = useState<Phase>('loading-meta');
   const [errorMsg, setErrorMsg] = useState<string>('');
   const [preset, setPreset] = useState<PresetName>('static');
+  const [presetIntensity, setPresetIntensity] = useState<number>(1); // 0.25..2
   const [lens, setLens] = useState<LensName>('wide');
   const [speed, setSpeed] = useState<number>(1);
   // DJI-style stabilisation toggles — RockSteady dampens motion, Horizon Leveling
@@ -191,6 +192,10 @@ export default function Editor() {
   useEffect(() => {
     sceneRef.current?.setPreset(preset);
   }, [preset]);
+
+  useEffect(() => {
+    sceneRef.current?.setPresetIntensity(presetIntensity);
+  }, [presetIntensity]);
 
   // Apply lens changes to scene
   useEffect(() => {
@@ -1068,6 +1073,46 @@ export default function Editor() {
               <p className="text-[11px] text-sky-500 leading-relaxed">
                 {PRESETS.find(p => p.id === preset)?.description}
               </p>
+
+              {/* Intensity slider — scales motion amplitude per preset. Disabled for Static. */}
+              <div className="rounded-lg border border-sky-800/40 bg-sky-950/40 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Motion intensity</span>
+                  <span className="text-xs font-mono text-ember-300 tabular-nums">{presetIntensity.toFixed(2)}×</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.1}
+                  max={2}
+                  step={0.05}
+                  value={presetIntensity}
+                  disabled={preset === 'static'}
+                  onChange={(e) => setPresetIntensity(Number(e.target.value))}
+                  className="w-full accent-ember-500 disabled:opacity-40"
+                />
+                <div className="flex items-center justify-between text-[9px] font-mono text-sky-600">
+                  <button
+                    disabled={preset === 'static'}
+                    onClick={() => setPresetIntensity(0.25)}
+                    className="hover:text-sky-300 disabled:opacity-40 uppercase tracking-wider"
+                  >Slow</button>
+                  <button
+                    disabled={preset === 'static'}
+                    onClick={() => setPresetIntensity(1)}
+                    className="hover:text-sky-300 disabled:opacity-40 uppercase tracking-wider"
+                  >Default</button>
+                  <button
+                    disabled={preset === 'static'}
+                    onClick={() => setPresetIntensity(2)}
+                    className="hover:text-sky-300 disabled:opacity-40 uppercase tracking-wider"
+                  >Fast</button>
+                </div>
+                {preset === 'static' && (
+                  <div className="text-[10px] text-sky-600 leading-snug">
+                    Pick a motion preset above to enable intensity.
+                  </div>
+                )}
+              </div>
               <div className="pt-3 border-t border-sky-800/30">
                 <button
                   onClick={() => sceneRef.current?.resetFrame()}

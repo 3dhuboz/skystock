@@ -76,39 +76,55 @@ export const LENSES: { id: LensName; label: string; fov: number; pitchBias: numb
  *  chosen "starting angle" is preserved and the preset becomes a subtle motion layered on top —
  *  matching DJI Mimo's feel, where presets don't override your reframing. Amplitudes are small
  *  (±15-30°) so the framing stays coherent through the shot. */
-export function cameraFor(preset: PresetName, t: number): { yaw: number; pitch: number; roll: number } {
+export interface CameraDelta {
+  yaw: number;
+  pitch: number;
+  roll: number;
+  /** Multiplicative zoom delta (1 = no change). Used by "push in" / Fly-through
+   *  to progress from wide → tight without changing the user's base zoom. */
+  zoomMul?: number;
+}
+
+/** Returns camera deltas for the given preset at time t (0..1 across the trim window).
+ *  `intensity` scales the motion amplitude — 1 is the default, 0.5 halves the range,
+ *  2 doubles it. Lets users slow down Orbit and soften Fly-through without touching
+ *  clip playback speed. */
+export function cameraFor(preset: PresetName, t: number, intensity = 1): CameraDelta {
+  const k = Math.max(0, intensity);
   switch (preset) {
     case 'static':
       // No motion at all — camera sits wherever the user dragged it.
       return { yaw: 0, pitch: 0, roll: 0 };
     case 'orbit':
-      // Continuous one-direction pan — full 360° over the trim window. Monotonic,
-      // no oscillation. Reads as a steady orbit, not a back-and-forth sway.
+      // Continuous one-direction pan. At k=1 the orbit completes 360° across the
+      // trim window; k=0.25 means it only sweeps 90°, much slower-feeling.
       return {
-        yaw: t * Math.PI * 2,   // 0 → 360°
+        yaw: t * Math.PI * 2 * k,
         pitch: 0,
         roll: 0,
       };
     case 'flyThrough':
-      // Smooth forward glide — linear yaw drift (~35° sweep), slight nose-down,
-      // one gentle bank. No oscillation. Reads as flight, not shake.
+      // Proper "push in" — gentle forward dolly via zoom interpolation, plus a
+      // subtle yaw curve and one soft bank. Reads as flying into the shot.
       return {
-        yaw: (t - 0.5) * 0.6,                          // −17° → +17° over clip
-        pitch: -0.1 - Math.sin(t * Math.PI) * 0.03,    // gentle nose-down with one breath
-        roll: Math.sin(t * Math.PI) * 0.06,            // one smooth left-right bank
+        yaw:   (t - 0.5) * 0.35 * k,                   // ±10° at k=1
+        pitch: -0.05 * k - Math.sin(t * Math.PI) * 0.02 * k,
+        roll:  Math.sin(t * Math.PI) * 0.05 * k,
+        // Zoom progresses 1.0 → ~1.25 across the clip at k=1. Pushing IN, not wobble.
+        zoomMul: 1 + t * 0.25 * k,
       };
     case 'reveal':
-      // Start pitched down 45° and lift smoothly to level. Easy to read as motion.
+      // Start pitched down 45° and lift smoothly to level.
       return {
-        yaw: (t - 0.5) * 0.4,
-        pitch: -0.8 * (1 - t) * (1 - t),
+        yaw: (t - 0.5) * 0.4 * k,
+        pitch: -0.8 * (1 - t) * (1 - t) * k,
         roll: 0,
       };
     case 'reverseReveal':
       // Start level, drift down 45° by end of clip.
       return {
-        yaw: -t * 0.4,
-        pitch: -0.8 * t * t,
+        yaw: -t * 0.4 * k,
+        pitch: -0.8 * t * t * k,
         roll: 0,
       };
   }
@@ -392,6 +408,8 @@ export interface SceneHandle {
   /** Toggle the SkyStock watermark overlay. Clean exports bypass it. */
   setWatermarkEnabled(on: boolean): void;
   setPreset(preset: PresetName): void;
+  /** Scale preset motion amplitude. 0.25..2 recommended. */
+  setPresetIntensity(intensity: number): void;
   getPreset(): PresetName;
   setLens(lens: LensName): void;
   getLens(): LensName;
@@ -705,6 +723,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
 
   let videoEl: HTMLVideoElement | null = null;
   let preset: PresetName = 'static';
+  let presetIntensity = 1; // 0.25..2 — scales motion amplitude per preset
   let lens: LensName = 'wide';
   let raf = 0;
   let yawOffset = 0;
@@ -822,11 +841,11 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
         const outSec = trimOut === Infinity ? videoEl.duration : Math.min(trimOut, videoEl.duration);
         const win = Math.max(0.01, outSec - trimIn);
         const tp = Math.min(1, Math.max(0, (videoEl.currentTime - trimIn) / win));
-        const c = cameraFor(preset, tp);
+        const c = cameraFor(preset, tp, presetIntensity);
         baseYaw = c.yaw;
         basePitch = c.pitch;
         roll = c.roll;
-        baseZoom = 1.0;
+        baseZoom = c.zoomMul ?? 1.0;
         effectiveLens = lens;
       }
 
@@ -924,6 +943,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     },
     setPreset(p) { preset = p; },
     getPreset() { return preset; },
+    setPresetIntensity(i) { presetIntensity = Math.max(0, Math.min(4, i)); },
     setLens(l) { lens = l; },
     getLens() { return lens; },
     setTrim(inSec, outSec) { trimIn = Math.max(0, inSec); trimOut = outSec; },
