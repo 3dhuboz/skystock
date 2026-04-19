@@ -1,9 +1,36 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, ComponentType, LazyExoticComponent } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react';
 import { Loader2 } from 'lucide-react';
 import { useIsAdmin } from './lib/admin';
+
+/**
+ * Wraps React.lazy with a one-shot auto-reload if the dynamic import fails.
+ * When a deploy ships new chunk hashes, visitors with the previous app shell
+ * cached will get "Failed to fetch dynamically imported module" trying to
+ * pull the old chunk URL. Rather than crash into the error boundary, we
+ * reload once — sessionStorage prevents an infinite reload loop.
+ */
+function lazyWithReload<T extends ComponentType<any>>(
+  factory: () => Promise<{ default: T }>,
+  key: string
+): LazyExoticComponent<T> {
+  return lazy(async () => {
+    try {
+      return await factory();
+    } catch (err) {
+      const flag = `__reloaded_${key}`;
+      if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem(flag)) {
+        sessionStorage.setItem(flag, '1');
+        window.location.reload();
+        // Never resolves; keep Suspense in flight until the reload takes over.
+        await new Promise(() => {});
+      }
+      throw err;
+    }
+  });
+}
 
 // Public pages
 import Layout from './components/Layout';
@@ -16,7 +43,7 @@ import SignInPage from './pages/SignInPage';
 import Account from './pages/Account';
 
 // Editor is ~500KB (Three.js) — only load on /edit/* routes
-const Editor = lazy(() => import('./pages/Editor'));
+const Editor = lazyWithReload(() => import('./pages/Editor'), 'editor');
 
 function EditorFallback() {
   return (
