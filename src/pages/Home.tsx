@@ -68,9 +68,12 @@ export default function Home() {
               <Link to="/browse" className="btn-ember text-base px-8 py-4">
                 <Play className="w-5 h-5" /> Browse Footage
               </Link>
-              <a href="#how-it-works" className="btn-ghost text-base px-6 py-4">
-                How it works <ArrowRight className="w-4 h-4" />
-              </a>
+              <Link to="/browse" className="btn-ghost text-base px-6 py-4 group">
+                Edit in browser — free
+                <span className="ml-2 text-xs font-mono text-sky-500 group-hover:text-sky-300">
+                  360° → TikTok / Reels / YouTube
+                </span>
+              </Link>
             </div>
 
             {/* Stats */}

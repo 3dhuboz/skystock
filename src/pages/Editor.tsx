@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Palette } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Palette, Monitor, Smartphone, Square } from 'lucide-react';
 import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle } from '../lib/editor';
 import { getVideo } from '../lib/api';
 import { Video } from '../lib/types';
@@ -30,8 +30,16 @@ export default function Editor() {
   const [titlePosition, setTitlePosition] = useState<TitlePosition>('center');
   const [color, setColor] = useState<ColorAdjust>(DEFAULT_COLOR);
   const [defaultEasing, setDefaultEasing] = useState<EasingCurve>('smooth');
+  type AspectId = '16:9' | '9:16' | '1:1';
+  const [aspect, setAspect] = useState<AspectId>('16:9');
   type TabId = 'motion' | 'lens' | 'speed' | 'keyframes' | 'color' | 'text';
   const [activeTab, setActiveTab] = useState<TabId>('motion');
+
+  const ASPECT_DIMS: Record<AspectId, { w: number; h: number; label: string }> = {
+    '16:9': { w: 1920, h: 1080, label: '1920×1080' },
+    '9:16': { w: 1080, h: 1920, label: '1080×1920' },
+    '1:1':  { w: 1080, h: 1080, label: '1080×1080' },
+  };
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
@@ -85,7 +93,8 @@ export default function Editor() {
 
     const scene = createScene(canvasRef.current);
     sceneRef.current = scene;
-    scene.setOutputSize(1920, 1080);
+    const dims = ASPECT_DIMS[aspect];
+    scene.setOutputSize(dims.w, dims.h);
 
     const videoEl = document.createElement('video');
     videoEl.crossOrigin = 'anonymous';
@@ -157,6 +166,12 @@ export default function Editor() {
   useEffect(() => {
     sceneRef.current?.setColor(color);
   }, [color]);
+
+  // Aspect ratio: resize render target when it changes.
+  useEffect(() => {
+    const dims = ASPECT_DIMS[aspect];
+    sceneRef.current?.setOutputSize(dims.w, dims.h);
+  }, [aspect]);
 
   // Watch playhead + enforce loop between trim handles during preview (not during export).
   useEffect(() => {
@@ -381,22 +396,24 @@ export default function Editor() {
             />
           </label>
         )}
-        <div className="text-xs text-sky-600 font-mono hidden lg:block">
-          Preview fits screen · export = 1920×1080
-        </div>
         <button
           onClick={handleExport}
           disabled={phase !== 'ready'}
           className="btn-ember text-sm px-5 py-2.5 disabled:opacity-40 disabled:cursor-not-allowed"
+          title={`Export at ${ASPECT_DIMS[aspect].label}`}
         >
           <Download className="w-4 h-4" />
-          Export 1080p
+          Export {ASPECT_DIMS[aspect].label}
         </button>
       </header>
 
       {/* Stage */}
-      <div className="flex-1 relative bg-black min-h-0">
-        <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+      <div className="flex-1 relative bg-black min-h-0 flex items-center justify-center">
+        <canvas
+          ref={canvasRef}
+          className="max-w-full max-h-full"
+          style={{ aspectRatio: aspect.replace(':', ' / ') }}
+        />
 
         {phase === 'loading-meta' || phase === 'loading-video' ? (
           <div className="absolute inset-0 flex items-center justify-center text-sky-400 text-sm">
@@ -455,7 +472,7 @@ export default function Editor() {
             </div>
             <a
               href={downloadBlobUrl}
-              download={`skystock-${id || 'edit'}.${downloadExt}`}
+              download={`skystock-${id || 'edit'}-${aspect.replace(':', 'x')}.${downloadExt}`}
               className="btn-ember text-sm px-5 py-2.5"
             >
               <Download className="w-4 h-4" /> Download
@@ -508,6 +525,29 @@ export default function Editor() {
           >
             <RotateCcw className="w-3.5 h-3.5 text-sky-300" />
           </button>
+          <div className="w-px h-5 bg-sky-800/50 mx-1 flex-shrink-0" />
+          {/* Aspect ratio segmented control */}
+          <div className="flex items-center rounded-md bg-sky-900/40 p-0.5 flex-shrink-0">
+            {([
+              { id: '16:9' as const, Icon: Monitor,    title: '16:9 · YouTube' },
+              { id: '9:16' as const, Icon: Smartphone, title: '9:16 · TikTok / Reels / Shorts' },
+              { id: '1:1'  as const, Icon: Square,     title: '1:1 · Instagram' },
+            ]).map(a => (
+              <button
+                key={a.id}
+                onClick={() => setAspect(a.id)}
+                title={a.title}
+                className={
+                  'px-2 h-6 rounded flex items-center justify-center transition-colors ' +
+                  (aspect === a.id
+                    ? 'bg-ember-500/25 text-ember-300'
+                    : 'text-sky-500 hover:text-sky-300')
+                }
+              >
+                <a.Icon className="w-3.5 h-3.5" />
+              </button>
+            ))}
+          </div>
           <div className="w-px h-5 bg-sky-800/50 mx-1 flex-shrink-0" />
           {([
             { id: 'motion',    label: 'Motion',    icon: Wand2 },
