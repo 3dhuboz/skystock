@@ -26,6 +26,10 @@ export default function Editor() {
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const [musicName, setMusicName] = useState<string>('');
   const [musicPickerOpen, setMusicPickerOpen] = useState<boolean>(false);
+  const [paywallOpen, setPaywallOpen] = useState<boolean>(false);
+  const [paywallTier, setPaywallTier] = useState<'free' | 'clean'>('free');
+  const [paywallEmail, setPaywallEmail] = useState<string>('');
+  const CLEAN_EXPORT_PRICE = 4.99;
 
   interface ClipSettings {
     preset: PresetName;
@@ -313,8 +317,8 @@ export default function Editor() {
     else { v.pause(); setPlaying(false); }
   };
 
-  // Export flow
-  const handleExport = async () => {
+  // Export flow — triggered from the paywall modal after a tier is chosen.
+  const runExport = async (tier: 'free' | 'clean') => {
     const scene = sceneRef.current;
     const v = videoElRef.current;
     if (!scene || !v) return;
@@ -325,6 +329,9 @@ export default function Editor() {
       setPhase('error');
       return;
     }
+
+    // Clean tier hides the watermark in the shader for the render duration.
+    scene.setWatermarkEnabled(tier !== 'clean');
 
     setPhase('exporting');
     setExportBytes(0);
@@ -371,9 +378,19 @@ export default function Editor() {
     setDownloadBlobUrl(url);
     setDownloadMime(handle.mime);
     setPhase('done');
+    // Restore watermark on preview so the live view always shows it.
+    scene.setWatermarkEnabled(true);
     v.loop = true; // restore preview loop
     v.currentTime = trimIn;
     v.play().catch(() => {});
+  };
+
+  // Opens the export paywall modal. Actual rendering happens via runExport() after tier choice.
+  const handleExport = () => {
+    if (phase !== 'ready') return;
+    setPaywallTier('free');
+    setPaywallEmail('');
+    setPaywallOpen(true);
   };
 
   const cancelExport = () => {
@@ -705,16 +722,25 @@ export default function Editor() {
                 <div className="flex-1">
                   <div className="text-sm font-medium">Your edit is ready.</div>
                   <div className="text-xs text-sky-400 font-mono">
-                    {exportSizeMB} MB · watermarked · free export
+                    {exportSizeMB} MB · {paywallTier === 'clean' ? 'clean · paid' : 'watermarked · preview'}
                   </div>
                 </div>
                 <a
                   href={downloadBlobUrl}
-                  download={`skystock-${id || 'edit'}-${aspect.replace(':', 'x')}.${downloadExt}`}
+                  download={`skystock-${id || 'edit'}-${aspect.replace(':', 'x')}${paywallTier === 'clean' ? '-clean' : ''}.${downloadExt}`}
                   className="btn-ember text-sm px-5 py-2.5"
                 >
                   <Download className="w-4 h-4" /> Download
                 </a>
+                {paywallTier === 'free' ? (
+                  <button
+                    onClick={() => { setPaywallTier('clean'); setPaywallOpen(true); }}
+                    className="btn-ghost text-xs"
+                    title={`Re-render clean (no watermark) for $${CLEAN_EXPORT_PRICE.toFixed(2)}`}
+                  >
+                    Remove watermark — ${CLEAN_EXPORT_PRICE.toFixed(2)}
+                  </button>
+                ) : null}
                 <button onClick={() => setPhase('ready')} className="btn-ghost text-xs">
                   Edit more
                 </button>
@@ -1129,6 +1155,115 @@ export default function Editor() {
         </aside>
       {/* End main workspace */}
       </div>
+
+      {/* Export paywall modal */}
+      {paywallOpen ? (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setPaywallOpen(false)}>
+          <div
+            className="bg-sky-950 border border-sky-800/50 rounded-xl shadow-2xl max-w-lg w-full flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-sky-800/50">
+              <div className="flex items-center gap-2">
+                <Download className="w-4 h-4 text-ember-400" />
+                <h3 className="font-display font-semibold text-sm text-white">Export your edit</h3>
+              </div>
+              <button onClick={() => setPaywallOpen(false)} className="text-sky-500 hover:text-sky-200">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-3">
+              <button
+                onClick={() => setPaywallTier('free')}
+                className={
+                  'w-full text-left p-4 rounded-xl border transition-colors ' +
+                  (paywallTier === 'free'
+                    ? 'bg-sky-500/10 border-sky-400/50'
+                    : 'bg-sky-900/30 border-sky-800/30 hover:border-sky-700/50')
+                }
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-4 h-4 mt-0.5 rounded-full border-2 border-sky-400 flex-shrink-0 flex items-center justify-center">
+                    {paywallTier === 'free' ? <div className="w-2 h-2 rounded-full bg-sky-400" /> : null}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-baseline justify-between">
+                      <div className="font-semibold text-sky-100">Preview export</div>
+                      <div className="text-sm font-mono text-sky-500">Free</div>
+                    </div>
+                    <div className="text-xs text-sky-500 mt-1">
+                      {ASPECT_DIMS[aspect].label} MP4 · watermarked "skystock.pages.dev"
+                    </div>
+                    <div className="text-[11px] text-sky-600 mt-2">
+                      Great for sharing on socials with attribution back to SkyStock.
+                    </div>
+                  </div>
+                </div>
+              </button>
+
+              <button
+                onClick={() => setPaywallTier('clean')}
+                className={
+                  'w-full text-left p-4 rounded-xl border transition-colors ' +
+                  (paywallTier === 'clean'
+                    ? 'bg-ember-500/10 border-ember-400/50'
+                    : 'bg-sky-900/30 border-sky-800/30 hover:border-sky-700/50')
+                }
+              >
+                <div className="flex items-start gap-3">
+                  <div className="w-4 h-4 mt-0.5 rounded-full border-2 border-ember-400 flex-shrink-0 flex items-center justify-center">
+                    {paywallTier === 'clean' ? <div className="w-2 h-2 rounded-full bg-ember-400" /> : null}
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex items-baseline justify-between">
+                      <div className="font-semibold text-ember-200">Clean export</div>
+                      <div className="text-sm font-mono text-ember-300">${CLEAN_EXPORT_PRICE.toFixed(2)} AUD</div>
+                    </div>
+                    <div className="text-xs text-sky-400 mt-1">
+                      {ASPECT_DIMS[aspect].label} MP4 · no watermark · your edit, fully yours.
+                    </div>
+                    <div className="text-[11px] text-sky-600 mt-2">
+                      One-time purchase for this specific edit. Use the clean file commercially.
+                    </div>
+                  </div>
+                </div>
+              </button>
+
+              {paywallTier === 'clean' ? (
+                <div className="pt-2">
+                  <label className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Delivery email</label>
+                  <input
+                    type="email"
+                    value={paywallEmail}
+                    onChange={(e) => setPaywallEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    className="mt-1 w-full h-9 px-3 rounded bg-sky-900/40 border border-sky-800/40 text-sm text-sky-100 placeholder-sky-600 focus:outline-none focus:border-ember-500/50"
+                  />
+                  <div className="text-[11px] text-sky-600 mt-1.5">
+                    We'll mail you the clean MP4 once payment clears.
+                  </div>
+                </div>
+              ) : null}
+            </div>
+            <div className="px-5 py-3 border-t border-sky-800/50 flex items-center justify-between">
+              <button onClick={() => setPaywallOpen(false)} className="btn-ghost text-xs">
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  if (paywallTier === 'clean' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(paywallEmail)) return;
+                  setPaywallOpen(false);
+                  runExport(paywallTier);
+                }}
+                disabled={paywallTier === 'clean' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(paywallEmail)}
+                className="btn-ember text-sm px-5 py-2 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {paywallTier === 'free' ? 'Render watermarked' : `Pay $${CLEAN_EXPORT_PRICE.toFixed(2)} + render`}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Music picker modal */}
       {musicPickerOpen ? (

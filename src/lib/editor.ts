@@ -383,6 +383,8 @@ export function computeAutoColor(video: HTMLVideoElement, assumeDLogM = false): 
 
 export interface SceneHandle {
   setVideo(video: HTMLVideoElement): void;
+  /** Toggle the SkyStock watermark overlay. Clean exports bypass it. */
+  setWatermarkEnabled(on: boolean): void;
   setPreset(preset: PresetName): void;
   getPreset(): PresetName;
   setLens(lens: LensName): void;
@@ -448,6 +450,7 @@ const FRAG = /* glsl */`
   uniform vec2 uDashAnchor;   // bottom-left of dashboard box in UV
   uniform vec2 uDashSize;     // size in UV fraction
   uniform float uDashOpacity; // 0..1
+  uniform float uWmOpacity;   // 0 = hide watermark (clean paid export), else standard tint
   uniform vec2  uTitlePos;    // title box anchor (x,y) in UV space
   uniform vec2  uTitleSize;   // title box size (w,h) in UV fraction
   const float PI = 3.14159265358979;
@@ -527,12 +530,14 @@ const FRAG = /* glsl */`
     col.rgb = clamp(col.rgb, 0.0, 1.0);
 
     // Watermark: ~26% wide × 9% tall, anchored 2% from the bottom-right corner.
-    vec2 wmAnchor = vec2(0.72, 0.03);
-    vec2 wmSize = vec2(0.26, 0.09);
-    vec2 wUv = (vUv - wmAnchor) / wmSize;
-    if (wUv.x >= 0.0 && wUv.x <= 1.0 && wUv.y >= 0.0 && wUv.y <= 1.0) {
-      vec4 wm = texture2D(uWm, wUv);
-      col.rgb = mix(col.rgb, wm.rgb, wm.a * 0.55);
+    if (uWmOpacity > 0.001) {
+      vec2 wmAnchor = vec2(0.72, 0.03);
+      vec2 wmSize = vec2(0.26, 0.09);
+      vec2 wUv = (vUv - wmAnchor) / wmSize;
+      if (wUv.x >= 0.0 && wUv.x <= 1.0 && wUv.y >= 0.0 && wUv.y <= 1.0) {
+        vec4 wm = texture2D(uWm, wUv);
+        col.rgb = mix(col.rgb, wm.rgb, wm.a * uWmOpacity);
+      }
     }
 
     // Title card: caller-controllable position + size.
@@ -672,6 +677,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       uDashAnchor:    { value: new THREE.Vector2(0.02, 0.70) },
       uDashSize:      { value: new THREE.Vector2(0.26, 0.28) },
       uDashOpacity:   { value: 0 },
+      uWmOpacity:     { value: 0.55 },
     },
   });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
@@ -887,6 +893,9 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       tex.wrapS = THREE.RepeatWrapping;
       material.uniforms.uVideo.value = tex;
       videoTex = tex;
+    },
+    setWatermarkEnabled(on) {
+      material.uniforms.uWmOpacity.value = on ? 0.55 : 0;
     },
     setPreset(p) { preset = p; },
     getPreset() { return preset; },
