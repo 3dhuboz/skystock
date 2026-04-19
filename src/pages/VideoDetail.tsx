@@ -40,7 +40,7 @@ export default function VideoDetail() {
         setVideo({
           id: id || '1',
           title: 'Sunrise Over The Gemfields',
-          description: 'Golden hour FPV sweep across the sapphire mining fields of Central QLD. This breathtaking footage captures the raw beauty of the gem fields as first light breaks over the horizon, illuminating the unique red earth landscape with warm golden tones. The DJI Avata 2 sweeps low across the terrain, providing an immersive perspective that traditional drone footage simply cannot match.',
+          description: 'Golden hour 360° FPV sweep across the sapphire mining fields of Central QLD. This breathtaking footage captures the raw beauty of the gem fields as first light breaks over the horizon, illuminating the unique red earth landscape with warm golden tones. The DJI Avata 360 sweeps low across the terrain, delivering a full spherical master you can reframe to any angle — hero the horizon, drop into the cockpit POV, or pan to the mining rigs in the foreground. One clip, every angle.',
           location: 'Emerald, QLD',
           tags: ['sunrise', 'mining', 'golden-hour', 'outback', 'landscape'],
           price_cents: 3999,
@@ -244,7 +244,7 @@ export default function VideoDetail() {
             </div>
             <div className="mt-4 pt-4 border-t border-sky-700/20 flex items-center gap-2 text-sm text-sky-500">
               <Camera className="w-4 h-4" />
-              Shot on DJI Avata 2 · Central Queensland, Australia
+              Shot on DJI Avata 360 · 360° master included · Central Queensland, Australia
             </div>
           </div>
         </div>

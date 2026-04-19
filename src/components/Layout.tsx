@@ -98,8 +98,8 @@ export default function Layout() {
                 <span className="font-display font-bold text-white">SkyStock FPV</span>
               </div>
               <p className="text-sm text-sky-500 leading-relaxed">
-                Premium FPV drone footage captured across Central Queensland.
-                Cinematic aerial perspectives with the DJI Avata 2.
+                Premium 360° FPV drone footage captured across Central Queensland.
+                Shot on the DJI Avata 360 — reframe every angle in post.
               </p>
             </div>
             <div>

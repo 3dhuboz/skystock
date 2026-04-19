@@ -1,6 +1,6 @@
 # SkyStock FPV
 
-Premium aerial FPV drone footage marketplace. Stock videos captured with DJI Avata 2 across Central Queensland, Australia.
+Premium 360° aerial FPV drone footage marketplace. Stock videos captured on the DJI Avata 360 across Central Queensland, Australia — every clip ships as a full spherical master, so buyers can reframe any angle in Insta360 Studio, Adobe Premiere, DaVinci Resolve, or any 360-capable editor.
 
 ## Tech Stack
 

@@ -46,7 +46,7 @@ export default function Home() {
           <div className="max-w-3xl">
             <div className="flex items-center gap-2 mb-6">
               <span className="px-3 py-1.5 rounded-full bg-ember-500/15 text-ember-400 text-xs font-mono font-medium border border-ember-500/25">
-                DJI Avata 2 · Central QLD
+                DJI Avata 360 · Central QLD
               </span>
             </div>
 
@@ -59,9 +59,9 @@ export default function Home() {
             </h1>
 
             <p className="mt-6 text-lg sm:text-xl text-sky-300/80 leading-relaxed max-w-xl font-body">
-              Cinematic aerial perspectives you won't find anywhere else.
-              Sweeping FPV drone footage from Central Queensland's most
-              stunning landscapes.
+              Full 360° spherical FPV footage you can reframe to any angle in post.
+              One clip, infinite final cuts — captured on the DJI Avata 360
+              across Central Queensland's most stunning landscapes.
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-4">
@@ -76,18 +76,18 @@ export default function Home() {
             {/* Stats */}
             <div className="mt-12 flex items-center gap-8 text-sm">
               <div>
+                <span className="font-display font-bold text-2xl text-white">360°</span>
+                <span className="block text-sky-500 mt-0.5">Spherical Source</span>
+              </div>
+              <div className="w-px h-10 bg-sky-700/30" />
+              <div>
                 <span className="font-display font-bold text-2xl text-white">4K</span>
-                <span className="block text-sky-500 mt-0.5">Resolution</span>
+                <span className="block text-sky-500 mt-0.5">Reframed Output</span>
               </div>
               <div className="w-px h-10 bg-sky-700/30" />
               <div>
-                <span className="font-display font-bold text-2xl text-white">60fps</span>
-                <span className="block text-sky-500 mt-0.5">Smooth Motion</span>
-              </div>
-              <div className="w-px h-10 bg-sky-700/30" />
-              <div>
-                <span className="font-display font-bold text-2xl text-white">FPV</span>
-                <span className="block text-sky-500 mt-0.5">Immersive POV</span>
+                <span className="font-display font-bold text-2xl text-white">∞</span>
+                <span className="block text-sky-500 mt-0.5">Reframe Angles</span>
               </div>
             </div>
           </div>
@@ -153,7 +153,7 @@ export default function Home() {
             {
               icon: <Play className="w-7 h-7" />,
               title: 'Preview',
-              description: 'Browse our library and preview watermarked clips. Every piece is 4K 60fps FPV footage shot across Central QLD.',
+              description: 'Browse the library and watch watermarked flat-frame samples. Every piece is a 360° spherical master shot on the DJI Avata 360 across Central QLD.',
               color: 'from-sky-500 to-sky-600',
             },
             {
@@ -164,8 +164,8 @@ export default function Home() {
             },
             {
               icon: <Zap className="w-7 h-7" />,
-              title: 'Download',
-              description: 'Get instant access to the full unwatermarked clip. Download up to 5 times with your unique secure link.',
+              title: 'Download & Reframe',
+              description: 'Grab the full 360° master (up to 5 downloads per purchase). Drop it into Insta360 Studio, Adobe Premiere, DaVinci Resolve or any 360-capable editor and compose any angle — your cut, your story.',
               color: 'from-ember-500 to-amber-500',
             },
           ].map((step, i) => (
@@ -194,8 +194,8 @@ export default function Home() {
             </h2>
             <p className="text-sky-400 leading-relaxed mb-6">
               From the rugged outback ranges to pristine coastlines, sugar cane fields to the gem
-              fields — every clip captures a unique slice of Central QLD that challenges traditional
-              aerial perspectives with immersive FPV flight.
+              fields — every clip captures a unique slice of Central QLD as a full 360° spherical
+              master, ready for you to reframe into whichever angle tells your story.
             </p>
             <div className="flex flex-wrap gap-2">
               {['Rockhampton', 'Yeppoon', 'Emerald', 'Gladstone', 'Mackay', 'Byfield', 'Mount Morgan'].map(loc => (

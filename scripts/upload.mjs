@@ -213,16 +213,16 @@ async function processVideo(file, outputDir, autoMode) {
 
   if (autoMode) {
     title = titleFromFilename(name);
-    description = `FPV drone footage shot on DJI Avata 360. ${info.resolution} at ${info.fps}fps.`;
+    description = `360° FPV drone footage shot on the DJI Avata 360 (${info.resolution} at ${info.fps}fps). Full spherical master — reframe any angle in Insta360 Studio, Adobe Premiere, or any 360-capable editor.`;
     location = 'Central QLD';
-    tags = 'fpv,drone,aerial,avata360';
+    tags = '360,fpv,drone,aerial,spherical,avata360';
     price = '29.99';
     status = 'draft';
   } else {
     title = await ask('Title', titleFromFilename(name));
-    description = await ask('Description', `FPV drone footage. ${info.resolution} at ${info.fps}fps.`);
+    description = await ask('Description', `360° FPV drone footage shot on the DJI Avata 360 (${info.resolution} at ${info.fps}fps). Full spherical master — reframe any angle in post.`);
     location = await ask('Location', 'Central QLD');
-    tags = await ask('Tags (comma sep)', 'fpv,drone,aerial');
+    tags = await ask('Tags (comma sep)', '360,fpv,drone,aerial,spherical');
     price = await ask('Price AUD', '29.99');
     const pubChoice = await ask('Publish immediately? (y/n)', 'n');
     status = pubChoice.toLowerCase() === 'y' ? 'published' : 'draft';

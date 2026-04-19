@@ -1,7 +1,7 @@
 # SkyStock FPV — Cowork Project Brief
 
 ## Project Overview
-A stock video footage marketplace for selling FPV drone footage shot with a DJI Avata 2 across Central Queensland, Australia. Users browse watermarked previews and pay via PayPal to download unwatermarked originals.
+A stock video footage marketplace for selling 360° FPV drone footage shot on the DJI Avata 360 across Central Queensland, Australia. Buyers browse watermarked flat-frame previews and pay via PayPal to download the full 360° spherical master — which they can reframe to any angle in post using Insta360 Studio, Adobe Premiere, DaVinci Resolve, or any 360-capable editor. One clip, infinite final cuts.
 
 ## Tech Stack
 - **Frontend**: React 18 + Vite + TypeScript + Tailwind CSS
