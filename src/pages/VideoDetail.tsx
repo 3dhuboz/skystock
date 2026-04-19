@@ -276,8 +276,19 @@ export default function VideoDetail() {
             </div>
 
             <button onClick={() => setShowCheckout(true)} className="btn-ember w-full text-base py-4">
-              <ShoppingCart className="w-5 h-5" /> Buy Now
+              <ShoppingCart className="w-5 h-5" /> Buy Raw 360 Master
             </button>
+
+            <Link
+              to={`/edit/${video.id}`}
+              className="mt-3 flex items-center justify-center gap-2 w-full py-3 rounded-xl border border-sky-700/40 bg-sky-900/30 text-sky-200 text-sm font-medium hover:bg-sky-800/40 transition-colors"
+            >
+              <Film className="w-4 h-4" />
+              Edit & export in browser — free
+            </Link>
+            <div className="mt-2 text-[11px] text-sky-600 text-center font-mono">
+              Reframe · pick a lens · trim · add music · watermarked export
+            </div>
 
             {/* Quick info */}
             <div className="mt-6 pt-6 border-t border-sky-700/20">

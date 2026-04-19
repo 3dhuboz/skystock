@@ -282,6 +282,13 @@ export default function Editor() {
     setKeyframes(prev => prev.filter(k => k.t !== t));
   }, []);
 
+  const moveKeyframe = useCallback((fromT: number, toT: number) => {
+    setKeyframes(prev => {
+      const next = prev.map(k => k.t === fromT ? { ...k, t: toT } : k);
+      return next.sort((a, b) => a.t - b.t);
+    });
+  }, []);
+
   const clearKeyframes = useCallback(() => setKeyframes([]), []);
 
   const loadMusic = useCallback((file: File) => {
@@ -475,6 +482,7 @@ export default function Editor() {
           onSeek={seekTo}
           onTrimChange={(a, b) => { setTrimIn(a); setTrimOut(b); }}
           onDeleteKeyframe={deleteKeyframe}
+          onMoveKeyframe={moveKeyframe}
         />
       ) : null}
 
@@ -760,11 +768,12 @@ interface TimelineProps {
   onSeek: (sec: number) => void;
   onTrimChange: (a: number, b: number) => void;
   onDeleteKeyframe: (t: number) => void;
+  onMoveKeyframe: (fromT: number, toT: number) => void;
 }
 
-function Timeline({ duration, playhead, trimIn, trimOut, keyframes, disabled, onSeek, onTrimChange, onDeleteKeyframe }: TimelineProps) {
+function Timeline({ duration, playhead, trimIn, trimOut, keyframes, disabled, onSeek, onTrimChange, onDeleteKeyframe, onMoveKeyframe }: TimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null);
-  const draggingRef = useRef<'in' | 'out' | 'scrub' | null>(null);
+  const draggingRef = useRef<'in' | 'out' | 'scrub' | { kind: 'kf'; origT: number; currentT: number; moved: boolean } | null>(null);
 
   const toPct = (t: number) => (duration > 0 ? (t / duration) * 100 : 0);
   const fromClientX = useCallback((x: number): number => {
@@ -788,11 +797,28 @@ function Timeline({ duration, playhead, trimIn, trimOut, keyframes, disabled, on
     const mode = draggingRef.current;
     if (!mode) return;
     const t = fromClientX(e.clientX);
+    if (typeof mode === 'object' && mode.kind === 'kf') {
+      const startX = 0; // unused, kept for clarity
+      void startX;
+      mode.moved = true;
+      const newT = Math.max(0, Math.min(duration, t));
+      onMoveKeyframe(mode.currentT, newT);
+      mode.currentT = newT;
+      onSeek(newT);
+      return;
+    }
     if (mode === 'scrub') onSeek(t);
     if (mode === 'in') onTrimChange(Math.max(0, Math.min(t, trimOut - 0.1)), trimOut);
     if (mode === 'out') onTrimChange(trimIn, Math.max(trimIn + 0.1, Math.min(duration, t)));
   };
-  const onPointerUp = () => { draggingRef.current = null; };
+  const onPointerUp = () => {
+    const mode = draggingRef.current;
+    if (typeof mode === 'object' && mode && mode.kind === 'kf' && !mode.moved) {
+      // Click without drag → seek to the keyframe
+      onSeek(mode.origT);
+    }
+    draggingRef.current = null;
+  };
 
   const inPct = toPct(trimIn);
   const outPct = toPct(trimOut);
@@ -843,20 +869,22 @@ function Timeline({ duration, playhead, trimIn, trimOut, keyframes, disabled, on
         >
           <div className="h-5 w-0.5 bg-ember-900/60" />
         </div>
-        {/* Keyframe diamonds — click seeks, shift-click deletes */}
+        {/* Keyframe diamonds — drag to move, click to seek, shift-click to delete */}
         {keyframes.map((kf) => (
           <div
             key={kf.t}
-            className="absolute top-1/2 w-0 h-0 -translate-x-1/2 -translate-y-1/2 z-20 cursor-pointer group"
+            className="absolute top-1/2 w-0 h-0 -translate-x-1/2 -translate-y-1/2 z-20 group"
             style={{ left: `${toPct(kf.t)}%` }}
-            title={`${formatTime(kf.t)} — click to seek, shift-click to delete`}
+            title={`${formatTime(kf.t)} (${kf.ease ?? 'smooth'}) — drag to move, click to seek, shift-click to delete`}
             onPointerDown={(e) => {
+              if (disabled) return;
               e.stopPropagation();
               if (e.shiftKey) { onDeleteKeyframe(kf.t); return; }
-              onSeek(kf.t);
+              draggingRef.current = { kind: 'kf', origT: kf.t, currentT: kf.t, moved: false };
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
             }}
           >
-            <div className="w-3 h-3 bg-emerald-400 rotate-45 border border-emerald-100 shadow-lg group-hover:scale-125 transition-transform" />
+            <div className="w-3 h-3 bg-emerald-400 rotate-45 border border-emerald-100 shadow-lg cursor-ew-resize group-hover:scale-125 transition-transform" />
           </div>
         ))}
         {/* Playhead */}
