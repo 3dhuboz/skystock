@@ -4,8 +4,8 @@ export type PresetName = 'static' | 'orbit' | 'flyThrough' | 'reveal' | 'reverse
 
 export const PRESETS: { id: PresetName; label: string; description: string }[] = [
   { id: 'static',         label: 'Static',         description: 'No motion. The camera holds wherever you drag it.' },
-  { id: 'orbit',          label: 'Orbit',          description: 'Smooth 360° rotation around the horizon.' },
-  { id: 'flyThrough',     label: 'Fly-through',    description: 'Dynamic yaw + tilt variation. Feels like flight.' },
+  { id: 'orbit',          label: 'Orbit',          description: 'Continuous 360° pan around the horizon. One direction, no wobble.' },
+  { id: 'flyThrough',     label: 'Fly-through',    description: 'Smooth forward glide — gentle yaw drift, slight nose-down, one soft bank. No shake.' },
   { id: 'reveal',         label: 'Reveal',         description: 'Starts tilted down, rises to horizon.' },
   { id: 'reverseReveal',  label: 'Reverse Reveal', description: 'Opens on horizon, drifts down and away.' },
 ];
@@ -82,18 +82,20 @@ export function cameraFor(preset: PresetName, t: number): { yaw: number; pitch: 
       // No motion at all — camera sits wherever the user dragged it.
       return { yaw: 0, pitch: 0, roll: 0 };
     case 'orbit':
-      // Full 180° yaw sweep back-and-forth around the base, visible but not disorienting.
+      // Continuous one-direction pan — full 360° over the trim window. Monotonic,
+      // no oscillation. Reads as a steady orbit, not a back-and-forth sway.
       return {
-        yaw: Math.sin(t * Math.PI * 2) * Math.PI * 0.5,   // ±90° sway
-        pitch: Math.sin(t * Math.PI * 4) * 0.12,
+        yaw: t * Math.PI * 2,   // 0 → 360°
+        pitch: 0,
         roll: 0,
       };
     case 'flyThrough':
-      // Dynamic handheld feel — punchy yaw + pitch + slight roll.
+      // Smooth forward glide — linear yaw drift (~35° sweep), slight nose-down,
+      // one gentle bank. No oscillation. Reads as flight, not shake.
       return {
-        yaw: Math.sin(t * Math.PI * 3) * 0.8 + Math.sin(t * 9) * 0.12,
-        pitch: Math.sin(t * Math.PI * 4.5) * 0.3,
-        roll: Math.sin(t * Math.PI * 2.5) * 0.1,
+        yaw: (t - 0.5) * 0.6,                          // −17° → +17° over clip
+        pitch: -0.1 - Math.sin(t * Math.PI) * 0.03,    // gentle nose-down with one breath
+        roll: Math.sin(t * Math.PI) * 0.06,            // one smooth left-right bank
       };
     case 'reveal':
       // Start pitched down 45° and lift smoothly to level. Easy to read as motion.
