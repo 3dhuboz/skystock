@@ -3,8 +3,9 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { UserButton } from '@clerk/clerk-react';
 import {
   LayoutDashboard, Film, Upload, ShoppingBag, Settings,
-  Clapperboard, Menu, X, ChevronLeft, ExternalLink
+  Menu, X, ExternalLink
 } from 'lucide-react';
+import { Logo } from '../Logo';
 
 const NAV_ITEMS = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
@@ -28,12 +29,10 @@ export default function AdminLayout() {
           {/* Logo */}
           <div className="p-5 flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-sky-500 to-ember-500 flex items-center justify-center">
-                <Clapperboard className="w-5 h-5 text-white" />
-              </div>
-              <div>
+              <Logo size={36} />
+              <div className="leading-none">
                 <span className="font-display font-bold text-white">SkyStock</span>
-                <span className="block text-[10px] font-mono text-sky-500 uppercase tracking-widest">Admin Panel</span>
+                <span className="block text-[10px] font-mono text-sky-500 uppercase tracking-widest mt-0.5">Admin Panel</span>
               </div>
             </div>
             <button className="lg:hidden text-sky-500 hover:text-white" onClick={() => setSidebarOpen(false)}>

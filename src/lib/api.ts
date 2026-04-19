@@ -2,13 +2,34 @@ import type { Video, Order, DashboardStats, UploadPayload } from './types';
 
 const API_BASE = '/api';
 
+async function getClerkToken(): Promise<string | null> {
+  try {
+    const clerk = (window as any).Clerk;
+    if (!clerk?.session) return null;
+    const token = await clerk.session.getToken();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options?.headers as Record<string, string> | undefined),
+  };
+
+  // Admin endpoints need a Clerk session bearer. Attach automatically so every caller
+  // (createVideo, uploadVideoFile, confirm-upload, dashboard, orders, settings) is authed
+  // without passing the token through by hand.
+  if (path.startsWith('/admin/')) {
+    const token = await getClerkToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
   });
 
   if (!res.ok) {

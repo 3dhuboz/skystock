@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useUser, UserButton } from '@clerk/clerk-react';
 import {
-  Wand2, Download, Clock, Sparkles, Film, Clapperboard,
+  Wand2, Download, Clock, Sparkles, Film,
   CreditCard, Mail, ShoppingBag, ArrowUpRight, Shield,
   Infinity as InfinityIcon,
 } from 'lucide-react';
 import { formatPrice } from '../lib/types';
 import { useIsAdmin } from '../lib/admin';
+import { Logo } from '../components/Logo';
 
 interface Edit {
   id: string;
@@ -95,9 +96,7 @@ export default function Account() {
       <nav className="relative z-10 border-b border-sky-700/20 backdrop-blur-xl" style={{ background: 'rgba(10,14,26,0.7)' }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-sky-500 to-ember-500 flex items-center justify-center">
-              <Clapperboard className="w-5 h-5 text-white" />
-            </div>
+            <Logo size={36} />
             <div>
               <span className="font-display font-bold text-lg text-white tracking-tight">SkyStock</span>
               <span className="font-display font-light text-xs text-ember-400 ml-1">FPV</span>

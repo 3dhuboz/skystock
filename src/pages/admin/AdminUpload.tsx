@@ -348,6 +348,7 @@ export default function AdminUpload() {
     if (!files.original) { toast.error('Original video file is required'); return; }
 
     setSubmitting(true);
+    setUploadProgress({});
     try {
       const video = await createVideo({
         title: form.title,
@@ -360,14 +361,14 @@ export default function AdminUpload() {
         status: form.status,
       });
 
-      if (files.original) {
-        await uploadVideoFile(video.id, files.original, 'original', pct => setUploadProgress(p => ({ ...p, original: pct })));
-      }
-      if (files.preview) {
-        await uploadVideoFile(video.id, files.preview, 'preview', pct => setUploadProgress(p => ({ ...p, preview: pct })));
-      }
-      if (files.thumbnail) {
-        await uploadVideoFile(video.id, files.thumbnail, 'thumbnail', pct => setUploadProgress(p => ({ ...p, thumbnail: pct })));
+      const queue: { type: 'original' | 'preview' | 'thumbnail'; file: File }[] = [];
+      if (files.original) queue.push({ type: 'original', file: files.original });
+      if (files.preview) queue.push({ type: 'preview', file: files.preview });
+      if (files.thumbnail) queue.push({ type: 'thumbnail', file: files.thumbnail });
+
+      for (const item of queue) {
+        await uploadVideoFile(video.id, item.file, item.type, pct => setUploadProgress(p => ({ ...p, [item.type]: pct })));
+        setUploadProgress(p => ({ ...p, [item.type]: 100 }));
       }
 
       toast.success('Video uploaded successfully!');
@@ -377,6 +378,30 @@ export default function AdminUpload() {
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // Combined upload progress for the overlay — weighted by file size so the big raw
+  // video drives the bar, not the tiny thumbnail.
+  const uploadTotals = (() => {
+    const items = [
+      { type: 'original' as const, file: files.original },
+      { type: 'preview' as const, file: files.preview },
+      { type: 'thumbnail' as const, file: files.thumbnail },
+    ].filter(x => x.file) as { type: 'original' | 'preview' | 'thumbnail'; file: File }[];
+    const totalBytes = items.reduce((s, x) => s + x.file.size, 0) || 1;
+    const doneBytes = items.reduce((s, x) => s + (x.file.size * (uploadProgress[x.type] || 0)) / 100, 0);
+    return {
+      items,
+      totalBytes,
+      doneBytes,
+      percent: Math.min(100, Math.round((doneBytes / totalBytes) * 100)),
+    };
+  })();
+
+  function fmtMB(bytes: number) {
+    return bytes > 900 * 1024 * 1024
+      ? `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
+      : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
   const fileZone = (type: 'original' | 'preview' | 'thumbnail', label: string, accept: string, icon: React.ReactNode) => (
@@ -457,7 +482,99 @@ export default function AdminUpload() {
   const hasSource = !!(files.thumbnail || files.original);
 
   return (
-    <div className="page-enter max-w-4xl">
+    <div className="page-enter max-w-4xl relative">
+      {/* Full-screen upload overlay — shown while the submit is in flight */}
+      {submitting && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center px-4">
+          <div
+            className="w-full max-w-xl rounded-3xl p-8"
+            style={{
+              background: 'linear-gradient(180deg, rgba(20,29,54,0.95), rgba(10,14,26,0.98))',
+              border: '1px solid rgba(249,115,22,0.35)',
+              boxShadow: '0 30px 80px -30px rgba(249,115,22,0.35)',
+            }}
+          >
+            <div className="flex items-center gap-3 mb-5">
+              <div
+                className="w-10 h-10 rounded-xl flex items-center justify-center"
+                style={{ background: 'linear-gradient(135deg, #38bdf8, #f97316)' }}
+              >
+                <Upload className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <div className="font-display font-bold text-white text-lg">Uploading clip</div>
+                <div className="text-xs text-sky-400">
+                  {fmtMB(uploadTotals.doneBytes)} of {fmtMB(uploadTotals.totalBytes)} sent · keep this tab open
+                </div>
+              </div>
+            </div>
+
+            {/* Big percent */}
+            <div className="flex items-baseline gap-2 mb-2">
+              <span
+                className="font-display font-extrabold text-5xl leading-none"
+                style={{
+                  backgroundImage: 'linear-gradient(90deg, #7dd3fc, #f97316)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+              >
+                {uploadTotals.percent}%
+              </span>
+              <span className="text-xs text-sky-500 font-mono">combined progress</span>
+            </div>
+
+            {/* Master bar */}
+            <div className="h-3 rounded-full bg-sky-900/60 overflow-hidden mb-6">
+              <div
+                className="h-full rounded-full transition-[width] duration-300"
+                style={{
+                  width: `${uploadTotals.percent}%`,
+                  background: 'linear-gradient(90deg, #38bdf8, #f97316)',
+                  boxShadow: '0 0 20px rgba(249,115,22,0.5)',
+                }}
+              />
+            </div>
+
+            {/* Per-file breakdown */}
+            <div className="space-y-3">
+              {uploadTotals.items.map(item => {
+                const pct = uploadProgress[item.type] || 0;
+                return (
+                  <div key={item.type}>
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-display font-semibold text-sky-200 capitalize">{item.type}</span>
+                        <span className="text-sky-600 font-mono">{fmtMB(item.file.size)}</span>
+                      </div>
+                      <span className={`font-mono ${pct >= 100 ? 'text-emerald-400' : 'text-ember-300'}`}>
+                        {pct >= 100 ? '✓ Done' : `${pct}%`}
+                      </span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-sky-900/60 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-[width] duration-200"
+                        style={{
+                          width: `${pct}%`,
+                          background: pct >= 100
+                            ? 'linear-gradient(90deg, #10b981, #34d399)'
+                            : 'linear-gradient(90deg, #38bdf8, #f97316)',
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-6 text-[11px] text-sky-600 text-center font-mono">
+              Uploading directly to Cloudflare R2 · large files take time
+            </div>
+          </div>
+        </div>
+      )}
+
       <h1 className="font-display font-bold text-2xl text-white mb-2">Upload New Video</h1>
       <p className="text-sky-500 text-sm mb-8">
         Add new FPV footage to your library. Attach the video, optionally type the location, then click <strong className="text-ember-300">AI Fill</strong> to auto-populate the rest.

@@ -1,6 +1,7 @@
 import { SignIn } from '@clerk/clerk-react';
 import { Link } from 'react-router-dom';
-import { Clapperboard, ArrowLeft } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
+import { Logo } from '../components/Logo';
 
 export default function SignInPage() {
   return (
@@ -66,9 +67,7 @@ export default function SignInPage() {
           >
             {/* Brand */}
             <div className="flex items-center gap-3 mb-8">
-              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-sky-500 to-ember-500 flex items-center justify-center shadow-lg">
-                <Clapperboard className="w-5 h-5 text-white" />
-              </div>
+              <Logo size={44} glow />
               <div>
                 <div className="font-display font-bold text-xl text-white tracking-tight">SkyStock</div>
                 <div className="text-xs uppercase tracking-[0.2em] text-ember-400">FPV · Avata 360</div>

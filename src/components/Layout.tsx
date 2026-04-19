@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Menu, X, Clapperboard, Search, LogIn, Shield } from 'lucide-react';
+import { Menu, X, Search, LogIn, Shield } from 'lucide-react';
 import { SignedIn, SignedOut, UserButton } from '@clerk/clerk-react';
 import { useIsAdmin } from '../lib/admin';
+import { Logo } from './Logo';
 
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -22,10 +23,10 @@ export default function Layout() {
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <Link to="/" className="flex items-center gap-3 group">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-sky-500 to-ember-500 flex items-center justify-center transition-transform group-hover:scale-110">
-                <Clapperboard className="w-5 h-5 text-white" />
+              <div className="transition-transform group-hover:scale-110 group-hover:rotate-12">
+                <Logo size={36} />
               </div>
-              <div>
+              <div className="leading-none">
                 <span className="font-display font-bold text-lg text-white tracking-tight">SkyStock</span>
                 <span className="font-display font-light text-xs text-ember-400 ml-1">FPV</span>
               </div>
@@ -128,9 +129,7 @@ export default function Layout() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div>
               <div className="flex items-center gap-3 mb-4">
-                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-500 to-ember-500 flex items-center justify-center">
-                  <Clapperboard className="w-4 h-4 text-white" />
-                </div>
+                <Logo size={32} />
                 <span className="font-display font-bold text-white">SkyStock FPV</span>
               </div>
               <p className="text-sm text-sky-500 leading-relaxed">
