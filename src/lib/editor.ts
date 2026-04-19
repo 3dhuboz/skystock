@@ -470,10 +470,20 @@ const FRAG = /* glsl */`
       float r2 = dot(p, p);
       return normalize(vec3(2.0 * p.x, 1.0 - r2, -2.0 * p.y));
     }
-    // Wide / Ultra Wide — standard pinhole. Zoom adjusts effective FOV.
-    float fovScaled = fovRad * uZoom;
-    float f = 1.0 / tan(clamp(fovScaled, 0.1, PI - 0.05) * 0.5);
-    return normalize(vec3(p.x, p.y, -f));
+    // Wide / Ultra Wide / FPV — pinhole that smoothly blends to Panini (stereographic from the
+    // backward pole) as the field of view opens past ~80°. Keeps the center rectilinear while
+    // edges curl cleanly — no barrel smear when the camera zooms out, so the Avata 360's wide
+    // capture actually looks wide instead of smeared.
+    float fovScaled = clamp(fovRad * uZoom, 0.1, PI - 0.05);
+    float f = 1.0 / tan(fovScaled * 0.5);
+    vec3 pinRay = normalize(vec3(p.x, p.y, -f));
+    float panBlend = smoothstep(1.4, 2.7, fovScaled); // 80° → 155°
+    if (panBlend <= 0.001) return pinRay;
+    // Panini scales p more as FOV grows so the full sphere is reachable at ~180°.
+    vec2 pp = p * (0.9 + panBlend * 1.3);
+    float r2 = dot(pp, pp);
+    vec3 panRay = normalize(vec3(2.0 * pp.x, 2.0 * pp.y, r2 - 1.0) / (r2 + 1.0));
+    return normalize(mix(pinRay, panRay, panBlend));
   }
 
   mat3 rotY(float a) { float c = cos(a), s = sin(a); return mat3( c,0.0,-s, 0.0,1.0,0.0,  s,0.0, c); }
@@ -707,8 +717,8 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   let bankRoll = 0;
   let prevFrameTime = 0;
   const PITCH_LIMIT = Math.PI / 2 - 0.05;
-  const ZOOM_MIN = 0.3;
-  const ZOOM_MAX = 3.0;
+  const ZOOM_MIN = 0.25;   // Panini blend kicks in, so users can zoom out hard without smearing.
+  const ZOOM_MAX = 3.5;
 
   // Click-drag reframe
   let dragging = false;
