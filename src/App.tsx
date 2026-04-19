@@ -9,6 +9,7 @@ import Browse from './pages/Browse';
 import VideoDetail from './pages/VideoDetail';
 import Success from './pages/Success';
 import Download from './pages/Download';
+import Editor from './pages/Editor';
 
 // Admin pages
 import AdminLayout from './components/admin/AdminLayout';
@@ -50,6 +51,10 @@ export default function App() {
           <Route path="/success" element={<Success />} />
           <Route path="/download" element={<Download />} />
         </Route>
+
+        {/* Editor — full-screen, no public Layout wrapper */}
+        <Route path="/edit/:id" element={<Editor />} />
+        <Route path="/edit" element={<Editor />} />
 
         {/* Admin routes (auth required) */}
         <Route path="/admin" element={

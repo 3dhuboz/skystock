@@ -7,3 +7,6 @@ dist/
 .dev.vars
 *.log
 .DS_Store
+
+# Spike / scratch — contains large test media not for git
+spike/
