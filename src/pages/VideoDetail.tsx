@@ -165,10 +165,17 @@ export default function VideoDetail() {
                 <video
                   ref={videoRef}
                   src={video.watermarked_url}
+                  poster={video.thumbnail_url || undefined}
                   muted={muted}
                   playsInline
                   onTimeUpdate={handleTimeUpdate}
                   onEnded={() => setPlaying(false)}
+                  className="w-full aspect-video object-cover"
+                />
+              ) : video.thumbnail_url ? (
+                <img
+                  src={video.thumbnail_url}
+                  alt={video.title}
                   className="w-full aspect-video object-cover"
                 />
               ) : (
@@ -455,20 +462,24 @@ export default function VideoDetail() {
                 </div>
               </div>
 
-              {/* Bundle hint */}
-              <div
-                className="rounded-2xl p-4 text-center"
+              {/* Bundle button */}
+              <button
+                type="button"
+                onClick={() => setShowCheckout(true)}
+                className="w-full rounded-2xl p-4 text-center transition-all hover:scale-[1.01] hover:border-ember-400/60 group"
                 style={{
                   background: 'linear-gradient(180deg, rgba(20,29,54,0.5), rgba(10,14,26,0.6))',
                   border: '1px dashed rgba(59,108,181,0.3)',
                 }}
               >
-                <div className="text-[10px] font-mono uppercase tracking-wider text-sky-500 mb-1">Bundle</div>
-                <div className="text-xs text-sky-300">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-sky-500 mb-1 group-hover:text-ember-400 transition-colors">
+                  Bundle · best value
+                </div>
+                <div className="text-xs text-sky-200">
                   Raw master + unlimited edits ·{' '}
                   <span className="font-display font-bold text-ember-300">{formatPrice(rawEditPremium)}</span>
                 </div>
-              </div>
+              </button>
             </div>
           </div>
         </div>

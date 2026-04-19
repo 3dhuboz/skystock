@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Upload, X, Film, Image, FileVideo, Check, Sparkles, Loader2, Wand2, Aperture } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
 import { createVideo, uploadVideoFile } from '../../lib/api';
+import { createScene, type LensName } from '../../lib/editor';
 import toast from 'react-hot-toast';
 
 interface AiFillResponse {
@@ -194,88 +195,113 @@ export default function AdminUpload() {
     }
   }
 
-  // --- Auto-preview: record a 6s watermarked teaser via MediaRecorder + canvas.captureStream
+  // --- Auto-preview: record an 18s SHOWCASE that cycles Wide → FPV → Tiny Planet lens
+  // projections through the editor's shader, so the preview IS the demo of the 360°
+  // reframing pitch. Watermarked, MediaRecorder out.
   async function generatePreview() {
     const video = files.original;
     if (!video) { toast.error('Attach the original video first'); return; }
     setPreviewBusy(true);
     setPreviewProgress(0);
-    const t = toast.loading('Recording watermarked preview…');
+    const t = toast.loading('Recording reframed showcase preview…');
     const url = URL.createObjectURL(video);
+
+    // Off-screen canvas that the shader scene will render into.
+    const hiddenCanvas = document.createElement('canvas');
+    hiddenCanvas.width = 1280;
+    hiddenCanvas.height = 720;
+    hiddenCanvas.style.position = 'fixed';
+    hiddenCanvas.style.left = '-9999px';
+    document.body.appendChild(hiddenCanvas);
+
+    let scene: ReturnType<typeof createScene> | null = null;
+    const sourceVideo = document.createElement('video');
+    sourceVideo.preload = 'auto';
+    sourceVideo.muted = true;
+    sourceVideo.playsInline = true;
+    sourceVideo.src = url;
+
     try {
-      const v = document.createElement('video');
-      v.preload = 'auto';
-      v.muted = true;
-      v.playsInline = true;
-      v.src = url;
       await new Promise<void>((resolve, reject) => {
-        v.onloadedmetadata = () => resolve();
-        v.onerror = () => reject(new Error('Could not load video'));
+        sourceVideo.onloadedmetadata = () => resolve();
+        sourceVideo.onerror = () => reject(new Error('Could not load video'));
       });
 
-      // Downscale for a manageable preview size (longest edge 1280px).
-      const maxSide = 1280;
-      const scale = Math.min(1, maxSide / Math.max(v.videoWidth, v.videoHeight));
-      const W = Math.max(16, Math.round(v.videoWidth * scale));
-      const H = Math.max(16, Math.round(v.videoHeight * scale));
-      const canvas = document.createElement('canvas');
-      canvas.width = W;
-      canvas.height = H;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Canvas unavailable');
+      scene = createScene(hiddenCanvas);
+      scene.setOutputSize(1280, 720);
+      scene.setWatermarkEnabled(true);
+      scene.setVideo(sourceVideo);
 
-      // Pick a watermarked MIME that MediaRecorder will actually take
-      const candidates = ['video/mp4;codecs=avc1.42E01E', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+      // Showcase programme — three chapters, each with a different lens + orbit motion.
+      // Real clip is long; sample the middle 24s window so we skip intros and outros.
+      const previewLen = 24;
+      const startOffset = Math.max(0, Math.min(sourceVideo.duration * 0.15, sourceVideo.duration - previewLen - 0.5));
+      const endOffset = Math.min(startOffset + previewLen, sourceVideo.duration - 0.1);
+      const chapters: { lens: LensName; durationSec: number }[] = [
+        { lens: 'wide', durationSec: 8 },        // 0–8s  : Wide establishing shot
+        { lens: 'fpv', durationSec: 8 },         // 8–16s : FPV dive feel
+        { lens: 'asteroid', durationSec: 8 },    // 16–24s: Tiny planet flourish
+      ];
+
+      // Use the orbit preset for continuous yaw motion across the whole showcase.
+      scene.setPreset('orbit');
+      scene.setTrim(startOffset, endOffset);
+
+      // Seek + prime
+      sourceVideo.currentTime = startOffset;
+      await new Promise<void>((resolve, reject) => {
+        sourceVideo.onseeked = () => resolve();
+        sourceVideo.onerror = () => reject(new Error('Seek failed'));
+      });
+
+      // Recorder on the shader-rendered canvas.
+      const candidates = [
+        'video/mp4;codecs=avc1.42E01E',
+        'video/webm;codecs=vp9',
+        'video/webm;codecs=vp8',
+        'video/webm',
+      ];
       const mime = candidates.find(m => (window as any).MediaRecorder?.isTypeSupported?.(m)) || '';
       if (!mime) throw new Error('MediaRecorder not supported in this browser');
 
-      const stream = canvas.captureStream(30);
-      const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 3_000_000 });
+      const stream = hiddenCanvas.captureStream(30);
+      const recorder = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 4_500_000 });
       const chunks: Blob[] = [];
       recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
-
-      // Start playback from 10% in so we skip black/props intros
-      const start = Math.min(v.duration * 0.1, 1);
-      const end = Math.min(start + 6, v.duration - 0.1);
-      v.currentTime = start;
-      await new Promise<void>((resolve, reject) => {
-        v.onseeked = () => resolve();
-        v.onerror = () => reject(new Error('Seek failed'));
-      });
 
       let stopped = false;
       const stopAll = () => {
         if (stopped) return;
         stopped = true;
         try { recorder.state !== 'inactive' && recorder.stop(); } catch {}
-        try { v.pause(); } catch {}
+        try { sourceVideo.pause(); } catch {}
+      };
+
+      // Lens chapter timer — switches lens at the right boundaries.
+      let currentChapter = 0;
+      scene.setLens(chapters[0].lens);
+
+      const tickChapter = () => {
+        const elapsed = sourceVideo.currentTime - startOffset;
+        let accum = 0;
+        let target = 0;
+        for (let i = 0; i < chapters.length; i++) {
+          accum += chapters[i].durationSec;
+          if (elapsed < accum) { target = i; break; }
+          target = i;
+        }
+        if (target !== currentChapter) {
+          currentChapter = target;
+          scene?.setLens(chapters[target].lens);
+        }
+        setPreviewProgress(Math.min(100, Math.round((elapsed / previewLen) * 100)));
+        if (sourceVideo.currentTime >= endOffset || sourceVideo.ended) stopAll();
+        else if (!stopped) requestAnimationFrame(tickChapter);
       };
 
       recorder.start();
-      await v.play();
-
-      const drawLoop = () => {
-        if (stopped) return;
-        ctx.drawImage(v, 0, 0, W, H);
-        // Watermark
-        ctx.save();
-        ctx.globalAlpha = 0.35;
-        ctx.fillStyle = '#ffffff';
-        const fontPx = Math.max(18, Math.round(H * 0.045));
-        ctx.font = `600 ${fontPx}px "DM Sans", system-ui, sans-serif`;
-        ctx.textAlign = 'right';
-        ctx.textBaseline = 'bottom';
-        ctx.shadowColor = 'rgba(0,0,0,0.5)';
-        ctx.shadowBlur = 6;
-        ctx.fillText('SkyStock FPV', W - 20, H - 16);
-        ctx.restore();
-
-        const done = v.currentTime >= end || v.ended;
-        setPreviewProgress(Math.min(100, Math.round(((v.currentTime - start) / (end - start)) * 100)));
-        if (done) stopAll();
-        else requestAnimationFrame(drawLoop);
-      };
-      drawLoop();
+      await sourceVideo.play();
+      tickChapter();
 
       const blob: Blob = await new Promise((resolve) => {
         recorder.onstop = () => resolve(new Blob(chunks, { type: mime }));
@@ -285,11 +311,13 @@ export default function AdminUpload() {
       const ext = mime.includes('mp4') ? 'mp4' : 'webm';
       const previewFile = new File([blob], `${stem}-preview.${ext}`, { type: mime });
       setFiles(prev => ({ ...prev, preview: previewFile }));
-      toast.success(`Preview ready (${(blob.size / (1024 * 1024)).toFixed(1)} MB)`, { id: t });
+      toast.success(`Preview ready · 24s showcase (${(blob.size / (1024 * 1024)).toFixed(1)} MB)`, { id: t });
     } catch (e: any) {
       toast.error(`Preview failed: ${e.message || 'unknown'}`, { id: t });
     } finally {
       URL.revokeObjectURL(url);
+      try { scene?.dispose?.(); } catch {}
+      try { hiddenCanvas.remove(); } catch {}
       setPreviewBusy(false);
       setPreviewProgress(0);
     }
