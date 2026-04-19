@@ -11,6 +11,8 @@ import Browse from './pages/Browse';
 import VideoDetail from './pages/VideoDetail';
 import Success from './pages/Success';
 import Download from './pages/Download';
+import SignInPage from './pages/SignInPage';
+import Account from './pages/Account';
 
 // Editor is ~500KB (Three.js) — only load on /edit/* routes
 const Editor = lazy(() => import('./pages/Editor'));
@@ -56,6 +58,18 @@ export default function App() {
         }}
       />
       <Routes>
+        {/* Auth — full-screen, no Layout wrapper */}
+        <Route path="/sign-in/*" element={<SignInPage />} />
+        <Route path="/sign-up/*" element={<SignInPage />} />
+
+        {/* Account — auth required, full-screen */}
+        <Route path="/account" element={
+          <>
+            <SignedIn><Account /></SignedIn>
+            <SignedOut><RedirectToSignIn /></SignedOut>
+          </>
+        } />
+
         {/* Public routes */}
         <Route element={<Layout />}>
           <Route path="/" element={<Home />} />

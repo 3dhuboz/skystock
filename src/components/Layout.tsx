@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Outlet, Link, useLocation } from 'react-router-dom';
-import { Menu, X, Clapperboard, Search } from 'lucide-react';
+import { Menu, X, Clapperboard, Search, LogIn } from 'lucide-react';
+import { SignedIn, SignedOut, UserButton } from '@clerk/clerk-react';
 
 export default function Layout() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -50,6 +51,31 @@ export default function Layout() {
                 <Search className="w-4 h-4" />
                 Search clips...
               </Link>
+
+              <SignedIn>
+                <Link
+                  to="/account"
+                  className={`font-display text-sm font-medium transition-colors ${
+                    location.pathname === '/account' ? 'text-white' : 'text-sky-400 hover:text-white'
+                  }`}
+                >
+                  My Edits
+                </Link>
+                <UserButton afterSignOutUrl="/" appearance={{ variables: { colorPrimary: '#f97316' } }} />
+              </SignedIn>
+              <SignedOut>
+                <Link
+                  to="/sign-in"
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-display font-semibold text-white transition-all hover:scale-[1.02]"
+                  style={{
+                    background: 'linear-gradient(135deg, #38bdf8, #f97316)',
+                    boxShadow: '0 8px 24px -8px rgba(249,115,22,0.4)',
+                  }}
+                >
+                  <LogIn className="w-4 h-4" />
+                  Sign in
+                </Link>
+              </SignedOut>
             </div>
 
             {/* Mobile menu button */}

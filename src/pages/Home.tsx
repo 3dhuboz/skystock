@@ -1,38 +1,20 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, Play, Camera, Shield, Zap, MapPin, ChevronRight } from 'lucide-react';
+import { ArrowRight, Camera, Aperture, Wand2, Crosshair, Gauge, Palette, Monitor, Check } from 'lucide-react';
 import VideoCard from '../components/VideoCard';
 import { getPublishedVideos } from '../lib/api';
 import type { Video } from '../lib/types';
 
 export default function Home() {
-  const [featuredVideos, setFeaturedVideos] = useState<Video[]>([]);
   const [latestVideos, setLatestVideos] = useState<Video[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function load() {
       try {
-        const [featured, latest] = await Promise.all([
-          getPublishedVideos({ sort: 'featured', limit: 3 }),
-          getPublishedVideos({ sort: 'newest', limit: 6 }),
-        ]);
-        setFeaturedVideos(featured.videos);
+        const latest = await getPublishedVideos({ sort: 'newest', limit: 6 });
         setLatestVideos(latest.videos);
       } catch {
-        // Demo data when API isn't connected
-        const demoVideos: Video[] = [
-          { id: '1', title: 'Sunrise Over The Gemfields', description: 'Golden hour FPV sweep across the sapphire mining fields of Central QLD', location: 'Emerald, QLD', tags: ['sunrise', 'mining', 'golden-hour'], price_cents: 3999, duration_seconds: 47, resolution: '4K', fps: 60, file_size_bytes: 524288000, preview_key: '', watermarked_key: '', original_key: '', thumbnail_key: '', status: 'published', download_count: 24, view_count: 312, featured: true, created_at: '2025-01-15', updated_at: '2025-01-15' },
-          { id: '2', title: 'Reef Coastline Rush', description: 'Low-altitude coastal run following the breaking waves along Yeppoon foreshore', location: 'Yeppoon, QLD', tags: ['coast', 'waves', 'ocean'], price_cents: 2999, duration_seconds: 35, resolution: '4K', fps: 60, file_size_bytes: 412000000, preview_key: '', watermarked_key: '', original_key: '', thumbnail_key: '', status: 'published', download_count: 41, view_count: 589, featured: true, created_at: '2025-01-20', updated_at: '2025-01-20' },
-          { id: '3', title: 'Cane Fields at Dusk', description: 'Sweeping dive through sugar cane fields as the sun sets over the Mackay hinterland', location: 'Mackay, QLD', tags: ['farming', 'sunset', 'rural'], price_cents: 2499, duration_seconds: 52, resolution: '4K', fps: 60, file_size_bytes: 610000000, preview_key: '', watermarked_key: '', original_key: '', thumbnail_key: '', status: 'published', download_count: 18, view_count: 203, featured: false, created_at: '2025-02-01', updated_at: '2025-02-01' },
-          { id: '4', title: 'Rocky Outback Circuit', description: 'High-speed FPV circuit around Mount Archer lookout with panoramic valley views', location: 'Rockhampton, QLD', tags: ['outback', 'mountain', 'panoramic'], price_cents: 3499, duration_seconds: 40, resolution: '4K', fps: 60, file_size_bytes: 480000000, preview_key: '', watermarked_key: '', original_key: '', thumbnail_key: '', status: 'published', download_count: 33, view_count: 410, featured: false, created_at: '2025-02-10', updated_at: '2025-02-10' },
-          { id: '5', title: 'Stockyard Creek Dive', description: 'Immersive proximity flight through ancient rainforest canopy along the creek bed', location: 'Byfield, QLD', tags: ['rainforest', 'creek', 'nature'], price_cents: 3999, duration_seconds: 58, resolution: '4K', fps: 60, file_size_bytes: 720000000, preview_key: '', watermarked_key: '', original_key: '', thumbnail_key: '', status: 'published', download_count: 56, view_count: 724, featured: true, created_at: '2025-02-14', updated_at: '2025-02-14' },
-          { id: '6', title: 'Harbour City Orbit', description: 'Smooth orbital shot around Gladstone harbour showcasing industrial and natural beauty', location: 'Gladstone, QLD', tags: ['harbour', 'industrial', 'city'], price_cents: 2999, duration_seconds: 44, resolution: '4K', fps: 60, file_size_bytes: 520000000, preview_key: '', watermarked_key: '', original_key: '', thumbnail_key: '', status: 'published', download_count: 12, view_count: 165, featured: false, created_at: '2025-02-20', updated_at: '2025-02-20' },
-        ];
-        setFeaturedVideos(demoVideos.filter(v => v.featured));
-        setLatestVideos(demoVideos);
-      } finally {
-        setLoading(false);
+        setLatestVideos([]);
       }
     }
     load();
@@ -40,177 +22,282 @@ export default function Home() {
 
   return (
     <div className="page-enter">
-      {/* Hero Section */}
-      <section className="relative hero-gradient overflow-hidden">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-20 sm:py-28 lg:py-36">
-          <div className="max-w-3xl">
-            <div className="flex items-center gap-2 mb-6">
-              <span className="px-3 py-1.5 rounded-full bg-ember-500/15 text-ember-400 text-xs font-mono font-medium border border-ember-500/25">
-                DJI Avata 360 · Central QLD
-              </span>
-            </div>
-
-            <h1 className="font-display font-extrabold text-4xl sm:text-5xl lg:text-6xl text-white leading-[1.1] tracking-tight">
-              Stock FPV footage
-              <br />
-              <span className="bg-gradient-to-r from-sky-400 via-sky-300 to-ember-400 bg-clip-text text-transparent">
-                that moves.
-              </span>
-            </h1>
-
-            <p className="mt-6 text-lg sm:text-xl text-sky-300/80 leading-relaxed max-w-xl font-body">
-              Full 360° spherical FPV footage you can reframe to any angle in post.
-              One clip, infinite final cuts — captured on the DJI Avata 360
-              across Central Queensland's most stunning landscapes.
-            </p>
-
-            <div className="mt-8 flex flex-wrap items-center gap-4">
-              <Link to="/browse" className="btn-ember text-base px-8 py-4">
-                <Play className="w-5 h-5" /> Browse Footage
-              </Link>
-              <Link to="/browse" className="btn-ghost text-base px-6 py-4 group">
-                Edit in browser — free
-                <span className="ml-2 text-xs font-mono text-sky-500 group-hover:text-sky-300">
-                  360° → TikTok / Reels / YouTube
+      {/* ====== HERO ====== */}
+      <section className="relative overflow-hidden">
+        <div className="absolute inset-0" style={{
+          background: 'linear-gradient(120deg, #0a0e1a 0%, #0e1426 60%, #17224a 100%)',
+        }} />
+        {/* motion streaks */}
+        <div className="absolute inset-0 pointer-events-none opacity-60">
+          {Array.from({ length: 14 }).map((_, i) => (
+            <div key={i} className="absolute h-px"
+              style={{
+                top: `${8 + i * 7}%`,
+                left: '-10%', right: '-10%',
+                background: `rgba(${i % 2 ? '125,211,252' : '251,146,60'},${0.04 + (i % 3) * 0.03})`,
+                transform: 'rotate(-3deg)',
+                height: i % 4 === 0 ? 2 : 1,
+              }}
+            />
+          ))}
+        </div>
+        <div className="relative max-w-7xl mx-auto px-6 lg:px-12 py-20 lg:py-28">
+          <div className="grid lg:grid-cols-[1fr_auto] gap-16 items-center">
+            {/* Left: Copy */}
+            <div className="max-w-xl">
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-ember-500/12 text-ember-400 text-[11px] font-mono font-medium border border-ember-500/30 tracking-[0.2em]">
+                <span className="w-1.5 h-1.5 rounded-full bg-ember-400 animate-pulse" />
+                DJI AVATA 360 · CENTRAL QUEENSLAND
+              </div>
+              <h1 className="mt-6 font-display font-extrabold text-6xl lg:text-7xl xl:text-[104px] text-white leading-[0.98] tracking-tight">
+                One clip.
+                <br />
+                <span style={{
+                  backgroundImage: 'linear-gradient(90deg, #7dd3fc 0%, #f97316 50%, #fdba74 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}>
+                  Infinite angles.
                 </span>
-              </Link>
+              </h1>
+              <p className="mt-7 text-lg text-sky-300/70 leading-relaxed font-body">
+                Cinematic 360° aerial footage from Central Queensland — shot on the DJI Avata 360. Buy the raw master for your NLE, or reframe it into your own cut in the browser. Every lens, every angle, every direction: yours.
+              </p>
+              <div className="mt-9 flex flex-wrap items-center gap-4">
+                <Link to="/browse" className="btn-ember text-base px-8 py-4">
+                  Browse clips <ArrowRight className="w-5 h-5" />
+                </Link>
+                <Link to="/edit" className="btn-ghost text-base px-7 py-4 border-sky-600/40">
+                  Try the editor — free
+                </Link>
+              </div>
+              <div className="mt-12 flex items-start gap-12">
+                {[
+                  ['360°', 'SPHERICAL SOURCE'],
+                  ['5.7K', 'CAPTURE · 4K OUT'],
+                  ['∞', 'REFRAME ANGLES'],
+                ].map(([big, small]) => (
+                  <div key={small}>
+                    <div className="font-display font-bold text-3xl text-white">{big}</div>
+                    <div className="mt-1 text-[10px] font-mono text-sky-400 tracking-[0.3em]">{small}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-
-            {/* Stats */}
-            <div className="mt-12 flex items-center gap-8 text-sm">
-              <div>
-                <span className="font-display font-bold text-2xl text-white">360°</span>
-                <span className="block text-sky-500 mt-0.5">Spherical Source</span>
+            {/* Right: viewport mock */}
+            <div className="w-full lg:w-[580px]">
+              <div className="relative aspect-[4/3] rounded-3xl overflow-hidden border border-sky-600/50 shadow-[0_30px_100px_-30px_rgba(0,0,0,0.8)]" style={{
+                background: 'radial-gradient(circle at center, #8dc7f1 0%, #4272a9 50%, #0d1a38 100%)',
+              }}>
+                {/* motion streaks inside viewport */}
+                {Array.from({ length: 18 }).map((_, i) => (
+                  <div key={i} className="absolute h-px"
+                    style={{
+                      top: `${4 + i * 5.5}%`,
+                      left: '-20%', right: '-20%',
+                      background: `rgba(255,255,255,${0.06 + (i % 3) * 0.04})`,
+                      transform: 'rotate(-5deg)',
+                      height: i % 4 === 0 ? 2 : 1,
+                    }}
+                  />
+                ))}
+                {/* tiny planet */}
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="w-[58%] aspect-square rounded-full"
+                    style={{
+                      background: 'radial-gradient(circle at center, #8cb259 0%, #a68050 55%, #40281d 100%)',
+                      boxShadow: '0 0 80px 15px rgba(249,115,22,0.55)',
+                    }}
+                  />
+                </div>
+                {/* HUD */}
+                <div className="absolute top-5 left-5">
+                  <div className="text-[10px] font-mono text-ember-400 tracking-[0.3em]">ASTEROID · ORBIT</div>
+                  <div className="mt-1 font-display font-semibold text-lg text-white">Rigglesford Park, QLD</div>
+                </div>
+                <div className="absolute bottom-4 right-4 text-[11px] font-mono text-white/40">skystock.pages.dev</div>
               </div>
-              <div className="w-px h-10 bg-sky-700/30" />
-              <div>
-                <span className="font-display font-bold text-2xl text-white">4K</span>
-                <span className="block text-sky-500 mt-0.5">Reframed Output</span>
-              </div>
-              <div className="w-px h-10 bg-sky-700/30" />
-              <div>
-                <span className="font-display font-bold text-2xl text-white">∞</span>
-                <span className="block text-sky-500 mt-0.5">Reframe Angles</span>
+              <div className="mt-3 flex items-center justify-between text-xs">
+                <div className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-ember-500/14 border border-ember-500/40">
+                  <span className="text-[10px] font-mono text-ember-300 tracking-[0.25em]">LIVE</span>
+                  <span className="text-sky-100 font-medium">Reframing in the browser</span>
+                </div>
+                <div className="text-[10px] font-mono text-sky-400 tracking-[0.3em]">CLIP 01 of 148</div>
               </div>
             </div>
           </div>
         </div>
-
-        {/* Decorative elements */}
-        <div className="absolute top-20 right-10 w-72 h-72 bg-sky-500/5 rounded-full blur-3xl" />
-        <div className="absolute bottom-10 right-40 w-48 h-48 bg-ember-500/5 rounded-full blur-3xl" />
       </section>
 
-      {/* Featured Videos */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="font-display font-bold text-2xl text-white">Featured Clips</h2>
-            <p className="text-sky-500 mt-1">Hand-picked aerial masterpieces</p>
+      {/* ====== AVATA 360 SPEC STRIP ====== */}
+      <section className="border-y border-sky-800/30 bg-[#0e1426]">
+        <div className="max-w-7xl mx-auto px-6 lg:px-12 py-10 flex flex-wrap items-center justify-center gap-x-12 gap-y-6">
+          <div className="flex items-center gap-4">
+            <div className="w-11 h-11 rounded-full border-2 border-ember-500"
+              style={{ background: 'radial-gradient(circle at center, #f97316 0%, #571f08 100%)' }}
+            />
+            <div>
+              <div className="text-[10px] font-mono text-sky-400 tracking-[0.3em]">SHOT ON</div>
+              <div className="font-display font-bold text-white text-lg">DJI Avata 360</div>
+            </div>
           </div>
-          <Link to="/browse" className="btn-ghost text-sm">
-            View all <ChevronRight className="w-4 h-4" />
-          </Link>
-        </div>
-
-        {loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="glass-card aspect-video animate-pulse bg-sky-800/20" />
-            ))}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {featuredVideos.map((video) => (
-              <VideoCard key={video.id} video={video} featured />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Latest Clips */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="font-display font-bold text-2xl text-white">Latest Uploads</h2>
-            <p className="text-sky-500 mt-1">Fresh footage hot off the drone</p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {latestVideos.map((video) => (
-            <VideoCard key={video.id} video={video} />
+          <div className="hidden sm:block w-px h-10 bg-sky-800/50" />
+          {[
+            ['SENSOR', '1/1.3" CMOS'],
+            ['CAPTURE', '5.7K · 60 fps'],
+            ['PROFILE', 'D-Log M 10-bit'],
+            ['FIELD OF VIEW', '360° Spherical'],
+            ['RESOLUTION', 'Dual 4K lenses'],
+          ].map(([label, val]) => (
+            <div key={label}>
+              <div className="text-[10px] font-mono text-sky-400 tracking-[0.3em]">{label}</div>
+              <div className="mt-0.5 font-display font-semibold text-white">{val}</div>
+            </div>
           ))}
         </div>
       </section>
 
-      {/* How it works */}
-      <section id="how-it-works" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="text-center mb-12">
-          <h2 className="font-display font-bold text-3xl text-white">How It Works</h2>
-          <p className="text-sky-400 mt-2">Three steps to stunning aerial footage</p>
+      {/* ====== FEATURE GRID ====== */}
+      <section className="max-w-7xl mx-auto px-6 lg:px-12 py-24">
+        <div className="text-center mb-14 max-w-3xl mx-auto">
+          <div className="text-[11px] font-mono text-ember-400 tracking-[0.35em]">BECAUSE THE SOURCE IS 360°</div>
+          <h2 className="mt-3 font-display font-bold text-4xl lg:text-5xl text-white leading-tight">
+            The camera captured everything. You pick the shot.
+          </h2>
+          <p className="mt-4 text-sky-400/70 text-lg leading-relaxed">
+            Every feature below rides on one simple fact: the Avata 360 records the full sphere. We give you every angle, projection, speed, and grade inside one browser editor.
+          </p>
         </div>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[
+            { kicker: 'REFRAME', icon: Wand2, title: 'Drag to pick your angle',
+              desc: 'Every clip is a full 360° sphere. Drag the preview to aim wherever the shot wanted to go — the camera already had it covered.',
+              grad: 'linear-gradient(135deg,#f97316,#3b6cb5)' },
+            { kicker: 'LENS MODES', icon: Aperture, title: '5 projections, one click',
+              desc: 'Wide, Ultra Wide, FPV, Asteroid (tiny planet), Rabbit Hole (sky tunnel). Switch lenses on the same source, no re-shoot.',
+              grad: 'linear-gradient(135deg,#7dd3fc,#2c477a)' },
+            { kicker: 'TRACKING', icon: Crosshair, title: 'Shift-click a subject',
+              desc: 'Tell the editor where to aim at three or four moments. It interpolates smooth camera keyframes between them — instant subject tracking.',
+              grad: 'linear-gradient(135deg,#8cb259,#f97316)' },
+            { kicker: 'SPEED', icon: Gauge, title: '0.25× slo-mo → 4× hyperlapse',
+              desc: 'Ramp the same 60 fps source into heroic slow-motion or urgent fast-cuts. Speed bakes into export.',
+              grad: 'linear-gradient(135deg,#33c199,#0d4066)' },
+            { kicker: 'GRADE', icon: Palette, title: 'D-Log M → Rec.709 in shader',
+              desc: 'One slider de-logs flat DJI footage. Full colourist grade (exposure / highlights / shadows / tint / vibrance) with a single Auto button.',
+              grad: 'linear-gradient(135deg,#fba55a,#5a1a66)' },
+            { kicker: 'EXPORT', icon: Monitor, title: '9:16 TikTok · 1:1 IG · 16:9',
+              desc: 'Same 360° source, three aspect ratios. TikTok, Reels, Shorts, YouTube, Instagram — one-click swap, clean MP4 per format.',
+              grad: 'linear-gradient(135deg,#7dd3fc,#f97316 50%,#fdba74)' },
+          ].map(f => {
+            const Icon = f.icon;
+            return (
+              <div key={f.kicker} className="glass-card p-8 group hover:border-sky-500/40 transition-colors">
+                <div className="w-32 h-20 rounded-xl relative overflow-hidden mb-6" style={{ background: f.grad }}>
+                  <Icon className="absolute bottom-3 right-3 w-6 h-6 text-white/85" />
+                </div>
+                <div className="text-[10px] font-mono text-ember-400 tracking-[0.35em]">{f.kicker}</div>
+                <h3 className="mt-3 font-display font-semibold text-white text-xl leading-snug">{f.title}</h3>
+                <p className="mt-3 text-sm text-sky-400/80 leading-relaxed">{f.desc}</p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+      {/* ====== LATEST CLIPS ====== */}
+      {latestVideos.length > 0 && (
+        <section className="max-w-7xl mx-auto px-6 lg:px-12 pb-16">
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <div className="text-[11px] font-mono text-ember-400 tracking-[0.35em]">LATEST UPLOADS</div>
+              <h2 className="mt-2 font-display font-bold text-3xl text-white">Fresh off the drone</h2>
+            </div>
+            <Link to="/browse" className="btn-ghost text-sm">View all <ArrowRight className="w-4 h-4" /></Link>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+            {latestVideos.map(v => <VideoCard key={v.id} video={v} />)}
+          </div>
+        </section>
+      )}
+
+      {/* ====== HOW IT WORKS ====== */}
+      <section className="bg-[#0e1426] border-y border-sky-800/30 py-24">
+        <div className="max-w-7xl mx-auto px-6 lg:px-12">
+          <div className="text-center mb-14">
+            <div className="text-[11px] font-mono text-ember-400 tracking-[0.35em]">HOW IT WORKS</div>
+            <h2 className="mt-3 font-display font-bold text-4xl text-white">From clip to export in under two minutes</h2>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            {[
+              ['01', 'Pick a clip', 'Browse the library filtered by location, tags, lens angle. Every clip ships with a free reframe preview.'],
+              ['02', 'Reframe', "Drag the viewport to aim. Pick a motion preset, tweak a lens, set keyframes if you want to track a subject."],
+              ['03', 'Grade & cut', 'D-Log slider brings the colour back. Trim to the highlight. Add music from the library. Pick 9:16 / 1:1 / 16:9.'],
+              ['04', 'Export', 'Watermarked preview is free. $4.99 buys the clean MP4 to your inbox. $29.99 buys the raw 360° master for your NLE.'],
+            ].map(([n, title, desc]) => (
+              <div key={n} className="glass-card p-7">
+                <div className="font-display font-extrabold text-5xl" style={{
+                  backgroundImage: 'linear-gradient(180deg,#f97316 0%,rgba(249,115,22,0.2) 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                }}>{n}</div>
+                <h3 className="mt-4 font-display font-semibold text-white text-lg">{title}</h3>
+                <p className="mt-2 text-sm text-sky-400/80 leading-relaxed">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ====== PRICING ====== */}
+      <section className="max-w-7xl mx-auto px-6 lg:px-12 py-24">
+        <div className="text-center max-w-2xl mx-auto mb-14">
+          <div className="text-[11px] font-mono text-ember-400 tracking-[0.35em]">SIMPLE PRICING</div>
+          <h2 className="mt-3 font-display font-bold text-4xl text-white">Pay for the cut you actually want</h2>
+          <p className="mt-4 text-sky-400/70 text-base leading-relaxed">No subscriptions. No gotchas. Preview for free, then decide whether you want the clean edit or the raw 360° master.</p>
+        </div>
+        <div className="grid lg:grid-cols-3 gap-6 items-stretch">
           {[
             {
-              icon: <Play className="w-7 h-7" />,
-              title: 'Preview',
-              description: 'Browse the library and watch watermarked flat-frame samples. Every piece is a 360° spherical master shot on the DJI Avata 360 across Central QLD.',
-              color: 'from-sky-500 to-sky-600',
+              kicker: 'FREE', price: '$0', note: 'watermarked preview', title: 'Preview export', cta: 'Start free', accent: false,
+              bullets: ['1080p MP4 at 9:16, 1:1 or 16:9', 'Full editor access (reframe, lens, color, speed, music, title)', '"skystock.pages.dev" watermark bottom-right', 'Great for socials with attribution'],
             },
             {
-              icon: <Shield className="w-7 h-7" />,
-              title: 'Purchase',
-              description: 'Pay securely via PayPal. One-time purchase with a royalty-free license for unlimited commercial and personal use.',
-              color: 'from-emerald-500 to-emerald-600',
+              kicker: 'MOST POPULAR', price: '$4.99', note: 'AUD · per clean edit', title: 'Clean edit', cta: 'Buy clean edit', accent: true,
+              bullets: ['Everything in Free, with no watermark', 'Delivered to your inbox when the render finishes', 'Commercial use of your edited cut', 'Re-edit the same source as many times as you like'],
             },
             {
-              icon: <Zap className="w-7 h-7" />,
-              title: 'Download & Reframe',
-              description: 'Grab the full 360° master (up to 5 downloads per purchase). Drop it into Insta360 Studio, Adobe Premiere, DaVinci Resolve or any 360-capable editor and compose any angle — your cut, your story.',
-              color: 'from-ember-500 to-amber-500',
+              kicker: 'FOR PROS', price: '$29.99', note: 'AUD · one-time', title: 'Raw 360° master', cta: 'Get the raw master', accent: false,
+              bullets: ['Full 5.7K equirectangular MP4', 'D-Log M 10-bit profile, untouched', 'Take it into Premiere / Resolve / Insta360 Studio', 'Unlimited exports from the file, forever'],
             },
-          ].map((step, i) => (
-            <div key={i} className="glass-card p-8 text-center group hover:border-sky-500/30 transition-all duration-300">
-              <div className={`w-16 h-16 rounded-2xl bg-gradient-to-br ${step.color} flex items-center justify-center mx-auto mb-5 text-white group-hover:scale-110 transition-transform`}>
-                {step.icon}
+          ].map(t => (
+            <div key={t.title}
+              className={
+                'rounded-3xl p-9 flex flex-col ' +
+                (t.accent ? 'border-2 border-ember-500 bg-[#141d36] shadow-[0_24px_80px_-20px_rgba(249,115,22,0.25)]' : 'glass-card')
+              }>
+              <div className={'text-[11px] font-mono tracking-[0.3em] ' + (t.accent ? 'text-ember-400' : 'text-sky-400')}>{t.kicker}</div>
+              <div className="mt-4 flex items-baseline gap-2">
+                <span className={'font-display font-extrabold text-5xl ' + (t.accent ? 'text-ember-400' : 'text-white')}>{t.price}</span>
+                <span className="text-sm text-sky-400/60 font-medium">{t.note}</span>
               </div>
-              <h3 className="font-display font-semibold text-lg text-white mb-3">{step.title}</h3>
-              <p className="text-sm text-sky-400 leading-relaxed">{step.description}</p>
+              <h3 className="mt-2 font-display font-semibold text-white text-xl">{t.title}</h3>
+              <ul className="mt-5 space-y-2.5 text-sm text-sky-400/80 leading-relaxed flex-1">
+                {t.bullets.map(b => (
+                  <li key={b} className="flex gap-2.5 items-start">
+                    <Check className={'w-4 h-4 mt-0.5 flex-shrink-0 ' + (t.accent ? 'text-ember-400' : 'text-sky-400')} />
+                    <span>{b}</span>
+                  </li>
+                ))}
+              </ul>
+              <Link to="/browse" className={
+                'mt-7 rounded-xl text-sm font-medium py-3.5 text-center transition-colors ' +
+                (t.accent ? 'bg-ember-500 hover:bg-ember-400 text-white' : 'border border-sky-700/50 text-white hover:bg-sky-800/40')
+              }>
+                {t.cta}
+              </Link>
             </div>
           ))}
-        </div>
-      </section>
-
-      {/* Location callout */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <div className="glass-card p-8 md:p-12 flex flex-col md:flex-row items-center gap-8 overflow-hidden relative">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-ember-500/5 rounded-full blur-3xl" />
-          <div className="flex-1 relative z-10">
-            <div className="flex items-center gap-2 mb-4">
-              <MapPin className="w-5 h-5 text-ember-400" />
-              <span className="font-display font-medium text-ember-400">Central Queensland, Australia</span>
-            </div>
-            <h2 className="font-display font-bold text-2xl md:text-3xl text-white mb-4">
-              Perspectives from the heart of Queensland
-            </h2>
-            <p className="text-sky-400 leading-relaxed mb-6">
-              From the rugged outback ranges to pristine coastlines, sugar cane fields to the gem
-              fields — every clip captures a unique slice of Central QLD as a full 360° spherical
-              master, ready for you to reframe into whichever angle tells your story.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {['Rockhampton', 'Yeppoon', 'Emerald', 'Gladstone', 'Mackay', 'Byfield', 'Mount Morgan'].map(loc => (
-                <span key={loc} className="px-3 py-1 rounded-full bg-sky-800/40 text-xs font-mono text-sky-300 border border-sky-700/20">
-                  {loc}
-                </span>
-              ))}
-            </div>
-          </div>
-          <div className="w-full md:w-80 h-52 rounded-2xl bg-gradient-to-br from-sky-700/30 to-ember-500/10 flex items-center justify-center">
-            <Camera className="w-16 h-16 text-sky-600" />
-          </div>
         </div>
       </section>
     </div>
