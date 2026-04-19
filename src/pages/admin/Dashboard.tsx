@@ -33,14 +33,23 @@ export default function Dashboard() {
           getAdminDashboard(),
           getAdminRevenue().catch(() => null),
         ]);
+        // Backend /admin/dashboard doesn't include revenue_by_month or top_videos by default —
+        // guarantee every array field is defined so the render can't throw on .length / .map.
+        const safe: DashboardStats = {
+          ...EMPTY_STATS,
+          ...data,
+          recent_orders: Array.isArray(data?.recent_orders) ? data.recent_orders : [],
+          top_videos: Array.isArray(data?.top_videos) ? data.top_videos : [],
+          revenue_by_month: Array.isArray(data?.revenue_by_month) ? data.revenue_by_month : [],
+        };
         if (revenueData?.months?.length) {
           const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-          data.revenue_by_month = revenueData.months.reverse().map(m => {
+          safe.revenue_by_month = revenueData.months.reverse().map(m => {
             const monthIdx = parseInt(m.month.split('-')[1], 10) - 1;
             return { month: monthNames[monthIdx] || m.month, revenue: m.total };
           });
         }
-        setStats(data);
+        setStats(safe);
       } catch (e: any) {
         setLoadError(e?.message || 'Could not load dashboard');
         setStats(EMPTY_STATS);
