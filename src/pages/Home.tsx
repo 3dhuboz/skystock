@@ -21,6 +21,13 @@ export default function Home() {
     load();
   }, []);
 
+  // Pick the featured or most-recent clip for the hero viewport + as background
+  // art for the feature tiles.
+  const hero = latestVideos.find(v => v.featured) || latestVideos[0] || null;
+  const heroClipUrl = hero?.preview_url || hero?.watermarked_url || null;
+  const heroPoster = hero?.thumbnail_url || null;
+  const heroLocation = hero?.location || 'Central QLD, Australia';
+
   return (
     <div className="page-enter">
       {/* ====== HERO ====== */}
@@ -86,17 +93,36 @@ export default function Home() {
                 ))}
               </div>
             </div>
-            {/* Right: viewport mock — live FPV showcase */}
+            {/* Right: viewport — real clip if we have one, procedural showcase otherwise */}
             <div className="w-full lg:w-[580px]">
               <div className="relative aspect-[4/3] rounded-3xl overflow-hidden border border-sky-600/50 shadow-[0_30px_100px_-30px_rgba(0,0,0,0.8)] bg-[#0d1a38]">
-                {/* Procedural FPV flight — obstacles whooshing past, snap freeze, resume */}
-                <FpvShowcase />
+                {heroClipUrl ? (
+                  <video
+                    key={heroClipUrl}
+                    src={heroClipUrl}
+                    poster={heroPoster || undefined}
+                    autoPlay
+                    muted
+                    loop
+                    playsInline
+                    className="absolute inset-0 w-full h-full object-cover"
+                  />
+                ) : (
+                  <FpvShowcase />
+                )}
                 {/* HUD */}
                 <div className="absolute top-5 left-5 z-10 pointer-events-none">
-                  <div className="text-[10px] font-mono text-ember-400 tracking-[0.3em]">FPV · LIVE DEMO</div>
-                  <div className="mt-1 font-display font-semibold text-lg text-white drop-shadow-lg">Rigglesford Park, QLD</div>
+                  <div className="text-[10px] font-mono text-ember-400 tracking-[0.3em]">{heroClipUrl ? 'PREVIEW · LIVE' : 'FPV · LIVE DEMO'}</div>
+                  <div className="mt-1 font-display font-semibold text-lg text-white drop-shadow-lg">{heroLocation}</div>
                 </div>
+                {/* watermark badge */}
                 <div className="absolute bottom-4 right-4 z-10 pointer-events-none text-[11px] font-mono text-white/40">skystock.pages.dev</div>
+                {/* Gradient vignette so HUD reads clean over bright footage */}
+                {heroClipUrl && (
+                  <div className="absolute inset-0 pointer-events-none z-[5]"
+                    style={{ background: 'linear-gradient(180deg, rgba(10,14,26,0.55) 0%, transparent 25%, transparent 70%, rgba(10,14,26,0.55) 100%)' }}
+                  />
+                )}
               </div>
               <div className="mt-3 flex items-center justify-between text-xs">
                 <div className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-ember-500/14 border border-ember-500/40">
@@ -174,7 +200,15 @@ export default function Home() {
             return (
               <div key={f.kicker} className="glass-card p-8 group hover:border-sky-500/40 transition-colors">
                 <div className="w-32 h-20 rounded-xl relative overflow-hidden mb-6" style={{ background: f.grad }}>
-                  <Icon className="absolute bottom-3 right-3 w-6 h-6 text-white/85" />
+                  {heroPoster && (
+                    <img
+                      src={heroPoster}
+                      alt=""
+                      className="absolute inset-0 w-full h-full object-cover opacity-55 mix-blend-luminosity"
+                    />
+                  )}
+                  <div className="absolute inset-0" style={{ background: f.grad, opacity: heroPoster ? 0.55 : 0 }} />
+                  <Icon className="absolute bottom-3 right-3 w-6 h-6 text-white drop-shadow-lg" />
                 </div>
                 <div className="text-[10px] font-mono text-ember-400 tracking-[0.35em]">{f.kicker}</div>
                 <h3 className="mt-3 font-display font-semibold text-white text-xl leading-snug">{f.title}</h3>
