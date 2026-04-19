@@ -1560,20 +1560,32 @@ export default function Editor() {
                 <Diamond className="w-3.5 h-3.5 fill-current" />
                 Add keyframe @ {formatTime(playhead)}
               </button>
-              <label className="flex items-center gap-2 text-xs">
-                <span className="text-sky-300 w-20">Transition</span>
-                <select
-                  value={defaultEasing}
-                  onChange={(e) => setDefaultEasing(e.target.value as EasingCurve)}
-                  className="flex-1 h-8 px-2 bg-sky-900/40 border border-sky-800/40 rounded text-xs text-sky-200 focus:outline-none focus:border-ember-500/50"
-                >
-                  <option value="linear">Linear</option>
-                  <option value="smooth">Smooth (S-curve)</option>
-                  <option value="ease-in">Ease in</option>
-                  <option value="ease-out">Ease out</option>
-                  <option value="hold">Hold</option>
-                </select>
-              </label>
+              {/* Default easing — visual curve picker for new keyframes */}
+              <div className="space-y-1.5">
+                <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Default transition</div>
+                <div className="grid grid-cols-5 gap-1">
+                  {EASING_OPTIONS.map(opt => {
+                    const active = defaultEasing === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        onClick={() => setDefaultEasing(opt.id)}
+                        title={opt.label}
+                        className={`aspect-square rounded-md flex items-center justify-center transition-all ${
+                          active
+                            ? 'bg-ember-500/20 border border-ember-400/50 text-ember-200'
+                            : 'bg-sky-900/40 border border-sky-800/40 text-sky-400 hover:text-white hover:border-sky-600/50'
+                        }`}
+                      >
+                        <EasingIcon kind={opt.id} />
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="text-[10px] font-mono text-sky-600 text-center">
+                  {EASING_OPTIONS.find(o => o.id === defaultEasing)?.label}
+                </div>
+              </div>
               <div className="pt-2 border-t border-sky-800/30">
                 <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider mb-2">
                   {keyframes.length} keyframe{keyframes.length === 1 ? '' : 's'}
@@ -1584,35 +1596,51 @@ export default function Editor() {
                   </p>
                 ) : (
                   <div className="space-y-1 max-h-60 overflow-y-auto">
-                    {keyframes.map(kf => (
-                      <div key={kf.t} className="flex items-center gap-2 px-2 py-1.5 rounded bg-sky-900/30 border border-sky-800/30">
-                        <Diamond className="w-2.5 h-2.5 text-emerald-400 fill-current flex-shrink-0" />
-                        <button
-                          onClick={() => seekTo(kf.t)}
-                          className="font-mono text-xs text-sky-200 tabular-nums flex-shrink-0 hover:text-ember-300"
-                        >
-                          {formatTime(kf.t)}
-                        </button>
-                        <select
-                          value={kf.ease ?? 'smooth'}
-                          onChange={(e) => setKeyframeEasing(kf.t, e.target.value as EasingCurve)}
-                          className="flex-1 min-w-0 h-6 px-1 bg-sky-950 border border-sky-800/50 rounded text-[10px] text-sky-300 focus:outline-none focus:border-ember-500/40"
-                        >
-                          <option value="linear">Linear</option>
-                          <option value="smooth">Smooth</option>
-                          <option value="ease-in">Ease in</option>
-                          <option value="ease-out">Ease out</option>
-                          <option value="hold">Hold</option>
-                        </select>
-                        <button
-                          onClick={() => deleteKeyframe(kf.t)}
-                          className="text-sky-600 hover:text-red-400 flex-shrink-0"
-                          title="Delete keyframe"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
+                    {keyframes.map(kf => {
+                      const currentEase = kf.ease ?? 'smooth';
+                      return (
+                        <div key={kf.t} className="px-2 py-2 rounded bg-sky-900/30 border border-sky-800/30 space-y-1.5">
+                          <div className="flex items-center gap-2">
+                            <Diamond className="w-2.5 h-2.5 text-emerald-400 fill-current flex-shrink-0" />
+                            <button
+                              onClick={() => seekTo(kf.t)}
+                              className="font-mono text-xs text-sky-200 tabular-nums hover:text-ember-300"
+                            >
+                              {formatTime(kf.t)}
+                            </button>
+                            <span className="flex-1 text-[10px] font-mono text-sky-500 uppercase tracking-wider truncate">
+                              {EASING_OPTIONS.find(o => o.id === currentEase)?.label}
+                            </span>
+                            <button
+                              onClick={() => deleteKeyframe(kf.t)}
+                              className="text-sky-600 hover:text-red-400 flex-shrink-0"
+                              title="Delete keyframe"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-5 gap-0.5">
+                            {EASING_OPTIONS.map(opt => {
+                              const active = currentEase === opt.id;
+                              return (
+                                <button
+                                  key={opt.id}
+                                  onClick={() => setKeyframeEasing(kf.t, opt.id)}
+                                  title={opt.label}
+                                  className={`aspect-square rounded flex items-center justify-center transition-all ${
+                                    active
+                                      ? 'bg-ember-500/25 text-ember-200'
+                                      : 'bg-sky-950/60 text-sky-500 hover:text-sky-200'
+                                  }`}
+                                >
+                                  <EasingIcon kind={opt.id} className="w-3 h-3" />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1884,6 +1912,36 @@ function MotionPresetThumb({ presetId }: { presetId: PresetName }) {
     </svg>
   );
 }
+
+/** Small SVG curve icon per easing type — used as the keyframe transition picker. */
+function EasingIcon({ kind, className = 'w-4 h-4' }: { kind: EasingCurve; className?: string }) {
+  // 20x20 viewBox, curves go from (2,18) → (18,2) to represent 0→1 animation.
+  const stroke = 'currentColor';
+  let path: string;
+  switch (kind) {
+    case 'linear':   path = 'M 2 18 L 18 2'; break;
+    case 'smooth':   path = 'M 2 18 C 8 18, 12 2, 18 2'; break;       // S-curve
+    case 'ease-in':  path = 'M 2 18 C 2 18, 12 18, 18 2'; break;      // slow then fast
+    case 'ease-out': path = 'M 2 18 C 8 2, 18 2, 18 2'; break;        // fast then slow
+    case 'hold':     path = 'M 2 18 L 10 18 L 10 2 L 18 2'; break;    // step
+  }
+  return (
+    <svg viewBox="0 0 20 20" className={className} fill="none" stroke={stroke} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {/* Corner reference marks */}
+      <circle cx="2"  cy="18" r="0.9" fill={stroke} stroke="none" />
+      <circle cx="18" cy="2"  r="0.9" fill={stroke} stroke="none" />
+      <path d={path} />
+    </svg>
+  );
+}
+
+const EASING_OPTIONS: { id: EasingCurve; label: string }[] = [
+  { id: 'linear',   label: 'Linear' },
+  { id: 'smooth',   label: 'Smooth' },
+  { id: 'ease-in',  label: 'Ease in' },
+  { id: 'ease-out', label: 'Ease out' },
+  { id: 'hold',     label: 'Hold' },
+];
 
 function formatTime(s: number): string {
   if (!Number.isFinite(s) || s < 0) s = 0;
