@@ -27,7 +27,27 @@ export default function Editor() {
   const [musicName, setMusicName] = useState<string>('');
   const [musicPickerOpen, setMusicPickerOpen] = useState<boolean>(false);
 
-  interface ClipEntry { id: string; name: string; url: string; trimIn: number; trimOut: number }
+  interface ClipSettings {
+    preset: PresetName;
+    lens: LensName;
+    speed: number;
+    color: ColorAdjust;
+    keyframes: Keyframe[];
+    title: string;
+    titleDuration: number;
+    titlePosition: TitlePosition;
+  }
+  const DEFAULT_CLIP_SETTINGS: ClipSettings = {
+    preset: 'orbit',
+    lens: 'wide',
+    speed: 1,
+    color: DEFAULT_COLOR,
+    keyframes: [],
+    title: '',
+    titleDuration: 3,
+    titlePosition: 'center',
+  };
+  interface ClipEntry { id: string; name: string; url: string; trimIn: number; trimOut: number; settings: ClipSettings }
   const [clips, setClips] = useState<ClipEntry[]>([]);
   const [activeClipId, setActiveClipId] = useState<string>('');
   const [title, setTitle] = useState<string>('');
@@ -170,17 +190,27 @@ export default function Editor() {
         catch { return `Clip ${prev.length + 1}`; }
       })();
       const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
-      const clip: ClipEntry = { id, name, url: sourceUrl, trimIn: 0, trimOut: 0 };
+      // First clip takes the current session state as its defaults; subsequent clips start clean.
+      const settings: ClipSettings = prev.length === 0
+        ? { preset, lens, speed, color, keyframes, title, titleDuration, titlePosition }
+        : DEFAULT_CLIP_SETTINGS;
+      const clip: ClipEntry = { id, name, url: sourceUrl, trimIn: 0, trimOut: 0, settings };
       setActiveClipId(id);
       return [...prev, clip];
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sourceUrl]);
 
-  // When trim changes, persist into the active clip entry.
+  // Live-sync session state into the active clip's settings so per-clip edits persist.
   useEffect(() => {
     if (!activeClipId) return;
-    setClips(prev => prev.map(c => c.id === activeClipId ? { ...c, trimIn, trimOut } : c));
-  }, [trimIn, trimOut, activeClipId]);
+    setClips(prev => prev.map(c => c.id === activeClipId ? {
+      ...c,
+      trimIn,
+      trimOut,
+      settings: { preset, lens, speed, color, keyframes, title, titleDuration, titlePosition },
+    } : c));
+  }, [activeClipId, trimIn, trimOut, preset, lens, speed, color, keyframes, title, titleDuration, titlePosition]);
 
   const addClipFile = useCallback((file: File) => {
     const url = URL.createObjectURL(file);
@@ -191,11 +221,20 @@ export default function Editor() {
   const switchClip = useCallback((id: string) => {
     const c = clips.find(x => x.id === id);
     if (!c) return;
+    // Set activeClipId first so the sync-to-clip effect targets the NEW clip with new values.
     setActiveClipId(id);
     setSourceUrl(c.url);
     setPhase('loading-video');
     setTrimIn(c.trimIn);
     setTrimOut(c.trimOut);
+    setPreset(c.settings.preset);
+    setLens(c.settings.lens);
+    setSpeed(c.settings.speed);
+    setColor(c.settings.color);
+    setKeyframes(c.settings.keyframes);
+    setTitle(c.settings.title);
+    setTitleDuration(c.settings.titleDuration);
+    setTitlePosition(c.settings.titlePosition);
   }, [clips]);
 
   const removeClip = useCallback((id: string) => {
@@ -208,6 +247,14 @@ export default function Editor() {
         setPhase('loading-video');
         setTrimIn(nextActive.trimIn);
         setTrimOut(nextActive.trimOut);
+        setPreset(nextActive.settings.preset);
+        setLens(nextActive.settings.lens);
+        setSpeed(nextActive.settings.speed);
+        setColor(nextActive.settings.color);
+        setKeyframes(nextActive.settings.keyframes);
+        setTitle(nextActive.settings.title);
+        setTitleDuration(nextActive.settings.titleDuration);
+        setTitlePosition(nextActive.settings.titlePosition);
       } else if (next.length === 0) {
         setActiveClipId('');
         setSourceUrl(null);
