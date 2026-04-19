@@ -19,6 +19,16 @@ export default function Editor() {
   const [preset, setPreset] = useState<PresetName>('static');
   const [lens, setLens] = useState<LensName>('wide');
   const [speed, setSpeed] = useState<number>(1);
+  // DJI-style stabilisation toggles — RockSteady dampens motion, Horizon Leveling
+  // locks horizon to world-up. Hooked to the scene as cosmetic state for now; full
+  // treatment lives in the shader motion stack.
+  const [rockSteady, setRockSteady] = useState<boolean>(true);
+  const [horizonLevel, setHorizonLevel] = useState<boolean>(true);
+  // Live camera telemetry — driven by the scene, shown as numeric readouts under
+  // the Lens tab so the editor reads as a real camera UI not a toy.
+  const [camReadout, setCamReadout] = useState<{ yawDeg: number; pitchDeg: number; rollDeg: number; fovDeg: number; zoom: number }>({
+    yawDeg: 0, pitchDeg: 0, rollDeg: 0, fovDeg: 75, zoom: 1,
+  });
   const [duration, setDuration] = useState<number>(0);
   const [playhead, setPlayhead] = useState<number>(0);
   const [trimIn, setTrimIn] = useState<number>(0);
@@ -305,6 +315,20 @@ export default function Editor() {
           v.currentTime = trimIn;
           if (audioElRef.current) audioElRef.current.currentTime = 0;
         }
+      }
+      // Camera telemetry readout — poll the scene each frame for live yaw/pitch/zoom.
+      const s = sceneRef.current;
+      if (s && s.captureState) {
+        const st = s.captureState();
+        const lensDef = LENSES.find(l => l.id === st.lens);
+        const fovDeg = (lensDef?.fov || 75) / (st.zoom || 1);
+        setCamReadout({
+          yawDeg: ((st.yaw * 180) / Math.PI) % 360,
+          pitchDeg: (st.pitch * 180) / Math.PI,
+          rollDeg: 0,
+          fovDeg,
+          zoom: st.zoom,
+        });
       }
       playheadRafRef.current = requestAnimationFrame(tick);
     };
@@ -802,8 +826,10 @@ export default function Editor() {
           >
             {playing ? <Pause className="w-4 h-4 text-sky-200" /> : <Play className="w-4 h-4 text-sky-200" />}
           </button>
-          <div className="font-mono text-xs text-sky-400 tabular-nums w-14 flex-shrink-0">
-            {formatTime(playhead)}
+          <div className="font-mono text-xs text-sky-400 tabular-nums flex-shrink-0 flex items-baseline gap-1.5">
+            <span className="text-white">{formatTimecode(playhead, 30)}</span>
+            <span className="text-sky-600">/</span>
+            <span>{formatTimecode(duration, 30)}</span>
           </div>
           <button
             onClick={() => sceneRef.current?.resetFrame()}
@@ -874,24 +900,33 @@ export default function Editor() {
                   </button>
                 </div>
               ) : null}
-              <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Preset</div>
+              {/* Motion preset tiles — visual thumbnails per DJI Studio's camera motion picker */}
+              <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Camera Motion</div>
               <div className="grid grid-cols-2 gap-2">
-                {PRESETS.map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => setPreset(p.id)}
-                    disabled={phase !== 'ready'}
-                    title={p.description}
-                    className={
-                      'px-3 py-2 rounded-lg text-sm font-medium transition-all text-left ' +
-                      (preset === p.id
-                        ? 'bg-ember-500/20 text-ember-300 border border-ember-500/40'
-                        : 'bg-sky-900/30 text-sky-300 border border-sky-800/30 hover:bg-sky-800/40')
-                    }
-                  >
-                    {p.label}
-                  </button>
-                ))}
+                {PRESETS.map(p => {
+                  const active = preset === p.id;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => setPreset(p.id)}
+                      disabled={phase !== 'ready'}
+                      title={p.description}
+                      className={`relative aspect-[4/3] rounded-lg overflow-hidden text-left transition-all ${
+                        active ? 'ring-2 ring-ember-400 scale-[1.02]' : 'ring-1 ring-sky-800/40 hover:ring-sky-600/60'
+                      }`}
+                      style={{ background: '#0a0e1a' }}
+                    >
+                      <MotionPresetThumb presetId={p.id} />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                      <div className="absolute bottom-1.5 left-2 right-2">
+                        <div className="text-[11px] font-display font-bold text-white leading-none drop-shadow-lg">{p.label}</div>
+                      </div>
+                      {active && (
+                        <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-ember-400 shadow-[0_0_8px_rgba(249,115,22,0.8)]" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
               <p className="text-[11px] text-sky-500 leading-relaxed">
                 {PRESETS.find(p => p.id === preset)?.description}
@@ -913,26 +948,109 @@ export default function Editor() {
           ) : null}
 
           {activeTab === 'lens' ? (
-            <div className="space-y-3">
-              <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Projection</div>
-              <div className="space-y-1.5">
-                {LENSES.map(l => (
-                  <button
-                    key={l.id}
-                    onClick={() => setLens(l.id)}
-                    disabled={phase !== 'ready'}
-                    className={
-                      'w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-left ' +
-                      (lens === l.id
-                        ? 'bg-sky-500/20 text-sky-200 border border-sky-500/40'
-                        : 'bg-sky-900/30 text-sky-300 border border-sky-800/30 hover:bg-sky-800/40')
-                    }
+            <div className="space-y-4">
+              {/* Stabilisation toggles — RockSteady + Horizon Leveling, DJI-style */}
+              <div className="rounded-lg border border-sky-800/40 bg-sky-950/40 p-3 space-y-2.5">
+                <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Stabilisation</div>
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-xs text-sky-200 font-display">RockSteady</span>
+                  <span className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${rockSteady ? 'bg-ember-500' : 'bg-sky-800'}`}
+                    onClick={() => setRockSteady(!rockSteady)}
                   >
-                    <div>{l.label}</div>
-                    <div className="text-[10px] text-sky-500 font-mono mt-0.5">FOV {l.fov}°</div>
+                    <span className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${rockSteady ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                  </span>
+                </label>
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-xs text-sky-200 font-display">Horizon Leveling</span>
+                  <span className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${horizonLevel ? 'bg-ember-500' : 'bg-sky-800'}`}
+                    onClick={() => setHorizonLevel(!horizonLevel)}
+                  >
+                    <span className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${horizonLevel ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                  </span>
+                </label>
+              </div>
+
+              {/* Lens tile grid — visual thumbnails with gradient per projection */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Manual Framing</div>
+                  <button
+                    onClick={() => sceneRef.current?.resetFrame()}
+                    className="text-[10px] font-mono text-sky-500 hover:text-ember-300 transition-colors"
+                    title="Re-center yaw/pitch/zoom"
+                  >
+                    RESET
                   </button>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {LENSES.map(l => {
+                    const active = lens === l.id;
+                    const grad = l.id === 'fpv'       ? 'linear-gradient(135deg,#f97316,#7c2d12)'
+                               : l.id === 'wide'      ? 'linear-gradient(135deg,#7dd3fc,#1e3a8a)'
+                               : l.id === 'ultraWide' ? 'linear-gradient(135deg,#38bdf8,#312e81)'
+                               : l.id === 'asteroid'  ? 'radial-gradient(circle at 50% 75%,#15803d 0%,#713f12 45%,#0a0e1a 85%)'
+                               : /* rabbitHole */       'radial-gradient(circle at 50% 30%,#38bdf8 0%,#1e3a8a 60%,#0a0e1a 90%)';
+                    return (
+                      <button
+                        key={l.id}
+                        onClick={() => setLens(l.id)}
+                        disabled={phase !== 'ready'}
+                        className={`relative aspect-[16/10] rounded-lg overflow-hidden text-left transition-all ${
+                          active ? 'ring-2 ring-ember-400 scale-[1.02]' : 'ring-1 ring-sky-800/40 hover:ring-sky-600/60'
+                        }`}
+                        style={{ background: grad }}
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                        <div className="absolute bottom-1.5 left-2 right-2">
+                          <div className="text-[11px] font-display font-bold text-white leading-none drop-shadow-lg">{l.label}</div>
+                          <div className="text-[9px] font-mono text-white/70 mt-0.5">FOV {l.fov}°</div>
+                        </div>
+                        {active && (
+                          <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-ember-400 shadow-[0_0_8px_rgba(249,115,22,0.8)]" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Zoom slider with angle readout */}
+              <div className="rounded-lg border border-sky-800/40 bg-sky-950/40 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Zoom</span>
+                  <span className="text-xs font-mono text-ember-300 tabular-nums">{camReadout.fovDeg.toFixed(1)}°</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.5}
+                  max={2}
+                  step={0.01}
+                  value={camReadout.zoom}
+                  onChange={(e) => {
+                    const z = Number(e.target.value);
+                    const s = sceneRef.current;
+                    if (s && (s as any).setZoom) (s as any).setZoom(z);
+                  }}
+                  className="w-full accent-ember-500"
+                />
+              </div>
+
+              {/* Live camera telemetry readouts */}
+              <div className="rounded-lg border border-sky-800/40 bg-sky-950/40 p-3 grid grid-cols-2 gap-x-3 gap-y-2">
+                {[
+                  { label: 'FOV',        value: `${camReadout.fovDeg.toFixed(1)}°`, color: '#7dd3fc' },
+                  { label: 'Correction', value: camReadout.zoom.toFixed(2),         color: '#f97316' },
+                  { label: 'Pan',        value: `${camReadout.yawDeg.toFixed(1)}°`, color: '#7dd3fc' },
+                  { label: 'Tilt',       value: `${camReadout.pitchDeg.toFixed(1)}°`, color: '#7dd3fc' },
+                  { label: 'Roll',       value: `${camReadout.rollDeg.toFixed(1)}°`, color: '#7dd3fc' },
+                ].map(r => (
+                  <div key={r.label}>
+                    <div className="text-[9px] font-mono uppercase text-sky-600 tracking-wider leading-none">{r.label}</div>
+                    <div className="text-xs font-mono tabular-nums mt-0.5" style={{ color: r.color }}>{r.value}</div>
+                  </div>
                 ))}
               </div>
+
               <p className="text-[11px] text-sky-500 leading-relaxed">
                 {LENSES.find(l => l.id === lens)?.description}
               </p>
@@ -1356,10 +1474,105 @@ export default function Editor() {
   );
 }
 
+/** Small vignette that visually represents each motion preset — used as the
+ *  thumbnail background on the Motion preset tiles so the editor feels like a
+ *  real preset picker (DJI Mimo / After Effects vibe) instead of labelled rectangles. */
+function MotionPresetThumb({ presetId }: { presetId: PresetName }) {
+  if (presetId === 'static') {
+    return (
+      <svg viewBox="0 0 100 75" className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <linearGradient id="mp-static" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="#0f172a" /><stop offset="1" stopColor="#1e293b" />
+          </linearGradient>
+        </defs>
+        <rect width="100" height="75" fill="url(#mp-static)" />
+        <rect x="35" y="27" width="30" height="22" fill="none" stroke="#7dd3fc" strokeWidth="1.2" />
+        <circle cx="50" cy="38" r="1.5" fill="#f97316" />
+      </svg>
+    );
+  }
+  if (presetId === 'orbit') {
+    return (
+      <svg viewBox="0 0 100 75" className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <radialGradient id="mp-orbit" cx="50%" cy="60%" r="70%">
+            <stop offset="0" stopColor="#7dd3fc" stopOpacity=".4" />
+            <stop offset="1" stopColor="#0a0e1a" />
+          </radialGradient>
+        </defs>
+        <rect width="100" height="75" fill="url(#mp-orbit)" />
+        <ellipse cx="50" cy="48" rx="34" ry="10" fill="none" stroke="#f97316" strokeWidth="2" />
+        <ellipse cx="50" cy="48" rx="26" ry="6" fill="none" stroke="#7dd3fc" strokeWidth="1" strokeDasharray="2 2" opacity=".7" />
+        <circle cx="84" cy="46" r="2.5" fill="#f97316" />
+        <path d="M 80 40 L 86 42 L 82 48 Z" fill="#f97316" />
+      </svg>
+    );
+  }
+  if (presetId === 'flyThrough') {
+    return (
+      <svg viewBox="0 0 100 75" className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <linearGradient id="mp-fly" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="#1e3a8a" /><stop offset="1" stopColor="#7c2d12" />
+          </linearGradient>
+        </defs>
+        <rect width="100" height="75" fill="url(#mp-fly)" />
+        {Array.from({ length: 6 }).map((_, i) => (
+          <line key={i} x1={10 + i * 14} y1={20 + i * 6} x2={30 + i * 14} y2={25 + i * 6}
+            stroke="#fdba74" strokeWidth="1.4" opacity={0.3 + i * 0.1} />
+        ))}
+        <path d="M 50 38 L 70 30 L 70 34 L 82 34 L 82 42 L 70 42 L 70 46 Z" fill="#f97316" />
+      </svg>
+    );
+  }
+  if (presetId === 'reveal') {
+    return (
+      <svg viewBox="0 0 100 75" className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <linearGradient id="mp-rev" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0" stopColor="#422006" /><stop offset=".5" stopColor="#b45309" /><stop offset="1" stopColor="#7dd3fc" />
+          </linearGradient>
+        </defs>
+        <rect width="100" height="75" fill="url(#mp-rev)" />
+        <path d="M 50 60 L 50 25" stroke="#ffffff" strokeWidth="2" />
+        <path d="M 45 30 L 50 22 L 55 30 Z" fill="#ffffff" />
+      </svg>
+    );
+  }
+  // reverseReveal
+  return (
+    <svg viewBox="0 0 100 75" className="absolute inset-0 w-full h-full" preserveAspectRatio="xMidYMid slice">
+      <defs>
+        <linearGradient id="mp-revr" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#7dd3fc" /><stop offset=".5" stopColor="#b45309" /><stop offset="1" stopColor="#422006" />
+        </linearGradient>
+      </defs>
+      <rect width="100" height="75" fill="url(#mp-revr)" />
+      <path d="M 50 15 L 50 50" stroke="#ffffff" strokeWidth="2" />
+      <path d="M 45 45 L 50 53 L 55 45 Z" fill="#ffffff" />
+    </svg>
+  );
+}
+
 function formatTime(s: number): string {
+  if (!Number.isFinite(s) || s < 0) s = 0;
   const m = Math.floor(s / 60);
   const rem = s - m * 60;
   return `${m}:${rem.toFixed(1).padStart(4, '0')}`;
+}
+
+/** HH:MM:SS:FF timecode — drop-frame-less. fps defaults to 30. */
+function formatTimecode(s: number, fps = 30): string {
+  if (!Number.isFinite(s) || s < 0) s = 0;
+  const totalFrames = Math.round(s * fps);
+  const ff = totalFrames % fps;
+  const totalSeconds = Math.floor(totalFrames / fps);
+  const ss = totalSeconds % 60;
+  const mm = Math.floor(totalSeconds / 60) % 60;
+  const hh = Math.floor(totalSeconds / 3600);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(hh)}:${pad(mm)}:${pad(ss)}:${pad(ff)}`;
 }
 
 interface TimelineProps {
