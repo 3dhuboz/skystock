@@ -116,10 +116,19 @@ export interface ColorAdjust {
   contrast: number;    // 0..2 (1 = neutral)
   saturation: number;  // 0..2 (1 = neutral)
   temperature: number; // -1..+1 (+ warm, - cool)
-  dLogM: boolean;      // apply D-Log M → Rec.709 tonemap
+  highlights: number;  // -1..+1 (lift/tame highlights)
+  shadows: number;     // -1..+1 (lift/tame shadows)
+  tint: number;        // -1..+1 (green/magenta)
+  vibrance: number;    // -1..+1 (smart saturation, preserves skin tones)
+  dLogIntensity: number; // 0..1 (how strongly to apply D-Log M → Rec.709)
+  horizonLevel: number;  // -1..+1 roll correction (radians: actual * π/4)
 }
 
-export const DEFAULT_COLOR: ColorAdjust = { exposure: 0, contrast: 1, saturation: 1, temperature: 0, dLogM: false };
+export const DEFAULT_COLOR: ColorAdjust = {
+  exposure: 0, contrast: 1, saturation: 1, temperature: 0,
+  highlights: 0, shadows: 0, tint: 0, vibrance: 0,
+  dLogIntensity: 0, horizonLevel: 0,
+};
 
 export interface StockTrack {
   id: string;
@@ -237,7 +246,11 @@ const FRAG = /* glsl */`
   uniform float uContrast;    // 0..2, 1 = neutral
   uniform float uSaturation;  // 0..2, 1 = neutral
   uniform float uTemperature; // -1..+1, warm+/cool-
-  uniform int   uDLogM;       // 1 = apply D-Log M → Rec.709 tonemap
+  uniform float uHighlights;  // -1..+1
+  uniform float uShadows;     // -1..+1
+  uniform float uTint;        // -1..+1 (+magenta, -green)
+  uniform float uVibrance;    // -1..+1 (smart saturation)
+  uniform float uDLogIntensity; // 0..1 how much D-Log→Rec709 to apply
   uniform vec2  uTitlePos;    // title box anchor (x,y) in UV space
   uniform vec2  uTitleSize;   // title box size (w,h) in UV fraction
   const float PI = 3.14159265358979;
@@ -286,18 +299,33 @@ const FRAG = /* glsl */`
     }
 
     // --- Color grading (applied to the video before overlays) ---
-    if (uDLogM == 1) {
-      // D-Log M → Rec.709 approximation: inverse-gamma + black lift + saturation restore.
-      // Not the official DJI LUT, but close enough to make logged footage readable.
-      col.rgb = pow(col.rgb, vec3(1.0 / 1.75));
-      col.rgb = (col.rgb - 0.12) * 1.55;
-      float dlm_luma = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
-      col.rgb = mix(vec3(dlm_luma), col.rgb, 1.3);
+    if (uDLogIntensity > 0.001) {
+      vec3 graded = col.rgb;
+      graded = pow(max(graded, vec3(0.0)), vec3(1.0 / 1.75));
+      graded = (graded - 0.12) * 1.55;
+      float dlm_luma = dot(graded, vec3(0.2126, 0.7152, 0.0722));
+      graded = mix(vec3(dlm_luma), graded, 1.3);
+      col.rgb = mix(col.rgb, clamp(graded, 0.0, 1.0), uDLogIntensity);
     }
     col.rgb *= exp2(uExposure);
     col.rgb = (col.rgb - 0.5) * uContrast + 0.5;
     float luma = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
+    // Highlights / shadows — weight by luma so each affects only its zone.
+    float hiWeight = smoothstep(0.5, 1.0, luma);
+    float shWeight = 1.0 - smoothstep(0.0, 0.5, luma);
+    col.rgb += uHighlights * 0.35 * hiWeight;
+    col.rgb += uShadows * 0.35 * shWeight;
+    // Tint: green (-) / magenta (+) shift on red+blue vs green.
+    col.rgb += vec3(uTint * 0.06, -uTint * 0.06, uTint * 0.06);
+    // Saturation (global).
     col.rgb = mix(vec3(luma), col.rgb, uSaturation);
+    // Vibrance: scales saturation more for low-sat pixels (protect skin-tones).
+    float mx = max(col.r, max(col.g, col.b));
+    float mn = min(col.r, min(col.g, col.b));
+    float satPx = mx > 0.0 ? (mx - mn) / mx : 0.0;
+    float vibBoost = uVibrance * (1.0 - satPx);
+    col.rgb = mix(vec3(luma), col.rgb, 1.0 + vibBoost);
+    // Temperature (warm/cool).
     col.rgb += vec3(uTemperature * 0.12, 0.0, -uTemperature * 0.12);
     col.rgb = clamp(col.rgb, 0.0, 1.0);
 
@@ -419,7 +447,11 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       uContrast:      { value: 1 },
       uSaturation:    { value: 1 },
       uTemperature:   { value: 0 },
-      uDLogM:         { value: 0 },
+      uHighlights:    { value: 0 },
+      uShadows:       { value: 0 },
+      uTint:          { value: 0 },
+      uVibrance:      { value: 0 },
+      uDLogIntensity: { value: 0 },
     },
   });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
@@ -651,7 +683,11 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       material.uniforms.uContrast.value = adj.contrast;
       material.uniforms.uSaturation.value = adj.saturation;
       material.uniforms.uTemperature.value = adj.temperature;
-      material.uniforms.uDLogM.value = adj.dLogM ? 1 : 0;
+      material.uniforms.uHighlights.value = adj.highlights;
+      material.uniforms.uShadows.value = adj.shadows;
+      material.uniforms.uTint.value = adj.tint;
+      material.uniforms.uVibrance.value = adj.vibrance;
+      material.uniforms.uDLogIntensity.value = adj.dLogIntensity;
     },
     setKeyframes(frames) { keyframes = frames.slice().sort((a, b) => a.t - b.t); },
     captureState() {

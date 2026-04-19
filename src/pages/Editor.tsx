@@ -35,6 +35,8 @@ export default function Editor() {
   const [aspect, setAspect] = useState<AspectId>('16:9');
   type TabId = 'motion' | 'lens' | 'speed' | 'keyframes' | 'color' | 'text';
   const [activeTab, setActiveTab] = useState<TabId>('motion');
+  // Footer panel height — drag the top edge to resize. 0 = collapsed (just the toolbar row).
+  const [panelHeight, setPanelHeight] = useState<number>(48);
 
   const ASPECT_DIMS: Record<AspectId, { w: number; h: number; label: string }> = {
     '16:9': { w: 1920, h: 1080, label: '1920×1080' },
@@ -319,6 +321,23 @@ export default function Editor() {
   const deleteKeyframe = useCallback((t: number) => {
     setKeyframes(prev => prev.filter(k => k.t !== t));
   }, []);
+
+  const startPanelResize = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = panelHeight;
+    const onMove = (ev: PointerEvent) => {
+      const delta = startY - ev.clientY; // drag up = positive = grow
+      const next = Math.max(0, Math.min(400, startH + delta));
+      setPanelHeight(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, [panelHeight]);
 
   const moveKeyframe = useCallback((fromT: number, toT: number) => {
     setKeyframes(prev => {
@@ -607,8 +626,20 @@ export default function Editor() {
           })}
         </div>
 
-        {/* Tab content */}
-        <div className="px-4 h-12 flex items-center gap-2 overflow-x-auto">
+        {/* Resize handle */}
+        <div
+          className="h-1.5 cursor-ns-resize bg-sky-900/30 hover:bg-sky-700/60 transition-colors relative group"
+          onPointerDown={startPanelResize}
+          title="Drag to resize · double-click to toggle"
+          onDoubleClick={() => setPanelHeight(panelHeight < 48 ? 48 : panelHeight < 120 ? 180 : 0)}
+        >
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-0.5 w-10 bg-sky-700/80 group-hover:bg-sky-400 rounded-full" />
+        </div>
+        {/* Tab content — height is user-controlled via the handle above */}
+        <div
+          className="px-4 flex items-center gap-2 overflow-auto"
+          style={{ height: `${panelHeight}px`, minHeight: 0, flexWrap: panelHeight > 60 ? 'wrap' : 'nowrap' }}
+        >
           {activeTab === 'motion' ? (
             <>
               {PRESETS.map(p => (
@@ -729,12 +760,13 @@ export default function Editor() {
           ) : null}
 
           {activeTab === 'color' ? (
-            <div className="flex items-center gap-3 flex-1">
+            <div className="flex items-center gap-x-4 gap-y-2 flex-wrap flex-1">
               <button
                 onClick={() => {
                   const v = videoElRef.current;
                   if (!v) return;
-                  setColor({ ...computeAutoColor(v, color.dLogM), dLogM: color.dLogM });
+                  const auto = computeAutoColor(v, color.dLogIntensity > 0);
+                  setColor({ ...color, ...auto, dLogIntensity: auto.dLogM ? 1 : color.dLogIntensity });
                 }}
                 disabled={phase !== 'ready'}
                 className="px-3 h-8 rounded-md bg-ember-500/20 text-ember-300 border border-ember-500/40 hover:bg-ember-500/30 text-xs font-medium transition-colors disabled:opacity-40 flex-shrink-0"
@@ -742,28 +774,32 @@ export default function Editor() {
               >
                 Auto
               </button>
-              <button
-                onClick={() => setColor({ ...color, dLogM: !color.dLogM })}
-                disabled={phase !== 'ready'}
-                className={
-                  'px-3 h-8 rounded-md text-xs font-medium transition-colors flex-shrink-0 border ' +
-                  (color.dLogM
-                    ? 'bg-sky-500/20 text-sky-200 border-sky-500/40'
-                    : 'bg-sky-900/30 text-sky-400 border-sky-800/40 hover:bg-sky-800/40')
-                }
-                title="Apply D-Log M → Rec.709 tonemap (toggle for DJI log footage)"
-              >
-                D-Log M
-              </button>
+              <label className="flex items-center gap-1.5 text-xs flex-shrink-0">
+                <span className="text-sky-300 font-medium">D-Log M</span>
+                <input
+                  type="range" min={0} max={1} step={0.01}
+                  value={color.dLogIntensity}
+                  onChange={(e) => setColor({ ...color, dLogIntensity: Number(e.target.value) })}
+                  className="w-16 accent-sky-500"
+                  title="Strength of the D-Log M → Rec.709 tonemap"
+                />
+                <span className="font-mono text-sky-500 tabular-nums w-8 text-right">
+                  {Math.round(color.dLogIntensity * 100)}%
+                </span>
+              </label>
               <div className="w-px h-5 bg-sky-800/50 flex-shrink-0" />
               {([
                 { key: 'exposure',    label: 'Exp',  min: -2, max: 2, step: 0.05 },
                 { key: 'contrast',    label: 'Con',  min:  0, max: 2, step: 0.05 },
+                { key: 'highlights',  label: 'Hi',   min: -1, max: 1, step: 0.05 },
+                { key: 'shadows',     label: 'Sh',   min: -1, max: 1, step: 0.05 },
                 { key: 'saturation',  label: 'Sat',  min:  0, max: 2, step: 0.05 },
+                { key: 'vibrance',    label: 'Vib',  min: -1, max: 1, step: 0.05 },
                 { key: 'temperature', label: 'Temp', min: -1, max: 1, step: 0.05 },
+                { key: 'tint',        label: 'Tint', min: -1, max: 1, step: 0.05 },
               ] as const).map(s => (
                 <label key={s.key} className="flex items-center gap-1.5 text-xs flex-shrink-0">
-                  <span className="text-sky-500 w-7 font-mono uppercase">{s.label}</span>
+                  <span className="text-sky-500 w-8 font-mono uppercase">{s.label}</span>
                   <input
                     type="range"
                     min={s.min} max={s.max} step={s.step}
