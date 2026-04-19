@@ -17,7 +17,7 @@ PAYPAL_CLIENT_ID = "AQhmLCG_sZBYF33XviBWUIONRhvaxOUDAnRtv6pAWFvWhCBx-j71-TKutmZS
 RESEND_FROM_EMAIL = "noreply@cupcycle.au"
 SITE_URL = "https://skystock.pages.dev"
 SITE_NAME = "SkyStock FPV"
-ADMIN_USER_IDS = "user_3CNt5U6NsmyiW5oWl131ulqnFIk"
+ADMIN_USER_IDS = "user_3CZ73IGcVwlxf7T8DQW7hSKw7MN"
 
 # Vite build-time variables (VITE_ prefix required for frontend)
 VITE_CLERK_PUBLISHABLE_KEY = "pk_test_ZWxlY3RyaWMtbWFzdG9kb24tOC5jbGVyay5hY2NvdW50cy5kZXYk"

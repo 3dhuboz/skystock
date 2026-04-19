@@ -3,7 +3,7 @@ import { useUser } from '@clerk/clerk-react';
 // Admin Clerk user IDs — must match ADMIN_USER_IDS in wrangler.toml (the backend is authoritative;
 // this is only for client UX like showing/hiding the admin nav link). Keep in sync.
 // Can be overridden at build time with VITE_ADMIN_USER_IDS="user_x,user_y".
-const BUILT_IN_ADMIN_IDS = ['user_3CNt5U6NsmyiW5oWl131ulqnFIk'];
+const BUILT_IN_ADMIN_IDS = ['user_3CZ73IGcVwlxf7T8DQW7hSKw7MN'];
 
 function parseAdminIds(): string[] {
   const envList = (import.meta.env.VITE_ADMIN_USER_IDS as string | undefined) || '';
