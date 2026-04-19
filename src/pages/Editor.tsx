@@ -29,6 +29,9 @@ export default function Editor() {
   const [camReadout, setCamReadout] = useState<{ yawDeg: number; pitchDeg: number; rollDeg: number; fovDeg: number; zoom: number }>({
     yawDeg: 0, pitchDeg: 0, rollDeg: 0, fovDeg: 75, zoom: 1,
   });
+  // Filmstrip thumbnails — extracted frames at even intervals of the clip, shown
+  // as the timeline background so the editor reads like a real NLE.
+  const [filmstrip, setFilmstrip] = useState<string[]>([]);
   const [duration, setDuration] = useState<number>(0);
   const [playhead, setPlayhead] = useState<number>(0);
   const [trimIn, setTrimIn] = useState<number>(0);
@@ -190,6 +193,62 @@ export default function Editor() {
   useEffect(() => {
     if (videoElRef.current) videoElRef.current.playbackRate = speed;
   }, [speed]);
+
+  // Extract filmstrip thumbnails from the source clip — sampled at 14 even
+  // intervals so the timeline reads as a filmstrip, not a coloured bar.
+  useEffect(() => {
+    if (!sourceUrl) return;
+    let cancelled = false;
+    (async () => {
+      const STRIP_COUNT = 14;
+      const v = document.createElement('video');
+      v.preload = 'auto';
+      v.muted = true;
+      v.playsInline = true;
+      v.crossOrigin = 'anonymous';
+      v.src = sourceUrl;
+
+      try {
+        await new Promise<void>((resolve, reject) => {
+          v.onloadedmetadata = () => resolve();
+          v.onerror = () => reject(new Error('filmstrip: metadata failed'));
+        });
+        if (cancelled) return;
+
+        const W = 128;
+        const H = Math.max(32, Math.round(W * (v.videoHeight / Math.max(1, v.videoWidth))));
+        const canvas = document.createElement('canvas');
+        canvas.width = W;
+        canvas.height = H;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const thumbs: string[] = [];
+        for (let i = 0; i < STRIP_COUNT; i++) {
+          if (cancelled) return;
+          const t = ((i + 0.5) / STRIP_COUNT) * v.duration;
+          v.currentTime = Math.min(t, Math.max(0, v.duration - 0.05));
+          await new Promise<void>((resolve, reject) => {
+            const done = () => { v.removeEventListener('seeked', done); v.removeEventListener('error', err); resolve(); };
+            const err = () => { v.removeEventListener('seeked', done); v.removeEventListener('error', err); reject(new Error('seek failed')); };
+            v.addEventListener('seeked', done);
+            v.addEventListener('error', err);
+          });
+          if (cancelled) return;
+          try {
+            ctx.drawImage(v, 0, 0, W, H);
+            thumbs.push(canvas.toDataURL('image/jpeg', 0.6));
+          } catch {
+            break;
+          }
+        }
+        if (!cancelled) setFilmstrip(thumbs);
+      } catch {
+        if (!cancelled) setFilmstrip([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sourceUrl]);
 
   // Apply trim to the scene (for preset t normalization) + enforce loop-within-trim during preview
   useEffect(() => {
@@ -829,6 +888,13 @@ export default function Editor() {
               onTrimChange={(a, b) => { setTrimIn(a); setTrimOut(b); }}
               onDeleteKeyframe={deleteKeyframe}
               onMoveKeyframe={moveKeyframe}
+              filmstrip={filmstrip}
+              clipBadges={[
+                LENSES.find(l => l.id === lens)?.label || lens,
+                PRESETS.find(p => p.id === preset)?.label || preset,
+                speed !== 1 ? `${speed}×` : '',
+                color.dLogM && color.dLogM > 0 ? 'D-Log M' : '',
+              ].filter(Boolean)}
             />
           ) : null}
 
@@ -1616,9 +1682,13 @@ interface TimelineProps {
   onTrimChange: (a: number, b: number) => void;
   onDeleteKeyframe: (t: number) => void;
   onMoveKeyframe: (fromT: number, toT: number) => void;
+  /** Array of thumbnail data URLs extracted at even intervals of the clip. */
+  filmstrip?: string[];
+  /** Per-clip metadata badges shown inline on the trim bar (e.g. "Wide", "D-Log M"). */
+  clipBadges?: string[];
 }
 
-function Timeline({ duration, playhead, trimIn, trimOut, keyframes, disabled, onSeek, onTrimChange, onDeleteKeyframe, onMoveKeyframe }: TimelineProps) {
+function Timeline({ duration, playhead, trimIn, trimOut, keyframes, disabled, onSeek, onTrimChange, onDeleteKeyframe, onMoveKeyframe, filmstrip, clipBadges }: TimelineProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef<'in' | 'out' | 'scrub' | { kind: 'kf'; origT: number; currentT: number; moved: boolean } | null>(null);
 
@@ -1683,21 +1753,60 @@ function Timeline({ duration, playhead, trimIn, trimOut, keyframes, disabled, on
       </div>
       <div
         ref={trackRef}
-        className="relative h-8 bg-sky-900/50 rounded-md select-none cursor-pointer"
+        className="relative h-12 bg-sky-900/50 rounded-md select-none cursor-pointer overflow-hidden"
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
+        {/* Filmstrip — extracted frame thumbnails as the track background */}
+        {filmstrip && filmstrip.length > 0 && (
+          <div className="absolute inset-0 flex pointer-events-none">
+            {filmstrip.map((src, i) => (
+              <div
+                key={i}
+                className="flex-1 h-full border-r border-black/30 last:border-r-0 bg-cover bg-center"
+                style={{ backgroundImage: `url(${src})` }}
+              />
+            ))}
+          </div>
+        )}
+        {/* Dim overlay so UI reads over the filmstrip */}
+        {filmstrip && filmstrip.length > 0 && (
+          <div className="absolute inset-0 bg-black/25 pointer-events-none" />
+        )}
+
         {/* Scrubbable background */}
         <div
           className="absolute inset-0 rounded-lg"
           onPointerDown={onPointerDown('scrub')}
         />
+
         {/* Active trim region */}
         <div
-          className="absolute top-0 bottom-0 bg-ember-500/15 border-y-2 border-ember-500/50 pointer-events-none"
+          className="absolute top-0 bottom-0 bg-ember-500/20 border-y-2 border-ember-500/60 pointer-events-none"
           style={{ left: `${inPct}%`, width: `${outPct - inPct}%` }}
         />
+
+        {/* Inline clip metadata badges — sits on top of the trim region */}
+        {clipBadges && clipBadges.length > 0 && (
+          <div className="absolute top-0.5 left-0 right-0 flex items-center gap-1 px-1 pointer-events-none z-[15] overflow-hidden"
+            style={{ paddingLeft: `calc(${inPct}% + 6px)`, paddingRight: `calc(${100 - outPct}% + 6px)` }}
+          >
+            {clipBadges.map((b, i) => (
+              <span
+                key={i}
+                className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded whitespace-nowrap truncate"
+                style={{
+                  background: 'rgba(10,14,26,0.8)',
+                  color: i === 0 ? '#fbbf24' : '#7dd3fc',
+                  border: `1px solid ${i === 0 ? 'rgba(251,191,36,0.5)' : 'rgba(125,211,252,0.4)'}`,
+                }}
+              >
+                {b}
+              </span>
+            ))}
+          </div>
+        )}
         {/* In handle */}
         <div
           onPointerDown={onPointerDown('in')}
