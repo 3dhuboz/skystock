@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowRight, Camera, Aperture, Wand2, Crosshair, Gauge, Palette, Monitor, Check } from 'lucide-react';
 import VideoCard from '../components/VideoCard';
+import FpvShowcase from '../components/FpvShowcase';
 import { getPublishedVideos } from '../lib/api';
 import type { Video } from '../lib/types';
 
@@ -85,38 +86,17 @@ export default function Home() {
                 ))}
               </div>
             </div>
-            {/* Right: viewport mock */}
+            {/* Right: viewport mock — live FPV showcase */}
             <div className="w-full lg:w-[580px]">
-              <div className="relative aspect-[4/3] rounded-3xl overflow-hidden border border-sky-600/50 shadow-[0_30px_100px_-30px_rgba(0,0,0,0.8)]" style={{
-                background: 'radial-gradient(circle at center, #8dc7f1 0%, #4272a9 50%, #0d1a38 100%)',
-              }}>
-                {/* motion streaks inside viewport */}
-                {Array.from({ length: 18 }).map((_, i) => (
-                  <div key={i} className="absolute h-px"
-                    style={{
-                      top: `${4 + i * 5.5}%`,
-                      left: '-20%', right: '-20%',
-                      background: `rgba(255,255,255,${0.06 + (i % 3) * 0.04})`,
-                      transform: 'rotate(-5deg)',
-                      height: i % 4 === 0 ? 2 : 1,
-                    }}
-                  />
-                ))}
-                {/* tiny planet */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-[58%] aspect-square rounded-full"
-                    style={{
-                      background: 'radial-gradient(circle at center, #8cb259 0%, #a68050 55%, #40281d 100%)',
-                      boxShadow: '0 0 80px 15px rgba(249,115,22,0.55)',
-                    }}
-                  />
-                </div>
+              <div className="relative aspect-[4/3] rounded-3xl overflow-hidden border border-sky-600/50 shadow-[0_30px_100px_-30px_rgba(0,0,0,0.8)] bg-[#0d1a38]">
+                {/* Procedural FPV flight — obstacles whooshing past, snap freeze, resume */}
+                <FpvShowcase />
                 {/* HUD */}
-                <div className="absolute top-5 left-5">
-                  <div className="text-[10px] font-mono text-ember-400 tracking-[0.3em]">ASTEROID · ORBIT</div>
-                  <div className="mt-1 font-display font-semibold text-lg text-white">Rigglesford Park, QLD</div>
+                <div className="absolute top-5 left-5 z-10 pointer-events-none">
+                  <div className="text-[10px] font-mono text-ember-400 tracking-[0.3em]">FPV · LIVE DEMO</div>
+                  <div className="mt-1 font-display font-semibold text-lg text-white drop-shadow-lg">Rigglesford Park, QLD</div>
                 </div>
-                <div className="absolute bottom-4 right-4 text-[11px] font-mono text-white/40">skystock.pages.dev</div>
+                <div className="absolute bottom-4 right-4 z-10 pointer-events-none text-[11px] font-mono text-white/40">skystock.pages.dev</div>
               </div>
               <div className="mt-3 flex items-center justify-between text-xs">
                 <div className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-full bg-ember-500/14 border border-ember-500/40">
