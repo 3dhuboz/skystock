@@ -234,30 +234,12 @@ export default function VideoDetail() {
                 </div>
               )}
 
-              {/* Controls bar */}
-              <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-sky-950/95 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                <div className="h-1.5 bg-sky-800/60 rounded-full mb-3 cursor-pointer" onClick={(e) => { e.stopPropagation(); handleSeek(e); }}>
-                  <div
-                    className="h-full rounded-full transition-all"
-                    style={{
-                      width: `${progress}%`,
-                      background: 'linear-gradient(90deg, #38bdf8, #f97316)',
-                    }}
-                  />
+              {/* Bottom-right watermark label. HeroReframer handles playback; no hover controls needed. */}
+              {(video.preview_url || video.watermarked_url) && (
+                <div className="absolute bottom-3 right-3 z-[5] pointer-events-none text-[10px] font-mono text-white/60 uppercase tracking-wider">
+                  Preview · Watermarked · {formatDuration(video.duration_seconds)}
                 </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <button onClick={(e) => { e.stopPropagation(); togglePlay(); }} className="text-white hover:text-ember-400 transition-colors">
-                      {playing ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                    </button>
-                    <button onClick={(e) => { e.stopPropagation(); setMuted(!muted); }} className="text-white hover:text-ember-400 transition-colors">
-                      {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                    </button>
-                    <span className="text-xs font-mono text-sky-300">{formatDuration(video.duration_seconds)}</span>
-                  </div>
-                  <span className="text-[11px] font-mono text-sky-400 uppercase tracking-wider">Preview · Watermarked</span>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Title block */}
