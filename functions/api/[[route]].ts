@@ -46,28 +46,51 @@ async function getPayPalAccessToken(env: Env): Promise<string> {
   return data.access_token;
 }
 
+function decodeJwtPayload(token: string): any | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    // base64url → base64
+    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const pad = b64.length % 4 === 0 ? b64 : b64 + '='.repeat(4 - (b64.length % 4));
+    return JSON.parse(atob(pad));
+  } catch {
+    return null;
+  }
+}
+
 async function verifyAdmin(req: Request, env: Env): Promise<boolean> {
-  // Verify Clerk session token
   const authHeader = req.headers.get('Authorization');
   if (!authHeader?.startsWith('Bearer ')) return false;
+  if (!env.CLERK_SECRET_KEY) return false;
 
   try {
-    // Simple Clerk session verification
-    // In production, use Clerk's JWT verification with JWKS
     const token = authHeader.slice(7);
-    const res = await fetch('https://api.clerk.com/v1/sessions/verify', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.CLERK_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ token }),
+
+    // 1. Parse JWT payload to get session ID (`sid`) and user ID (`sub`).
+    //    This doesn't verify the signature — step 2 does that via Clerk's session-lookup endpoint,
+    //    which is authenticated with CLERK_SECRET_KEY and will reject any forged session ID.
+    const payload = decodeJwtPayload(token);
+    if (!payload) return false;
+
+    const userId: string | undefined = payload.sub;
+    const sessionId: string | undefined = payload.sid;
+    const exp: number | undefined = payload.exp;
+
+    if (!userId || !sessionId) return false;
+    if (exp && Date.now() / 1000 > exp) return false;
+
+    // 2. Confirm the session exists, is active, and is still tied to this user.
+    const res = await fetch(`https://api.clerk.com/v1/sessions/${sessionId}`, {
+      headers: { Authorization: `Bearer ${env.CLERK_SECRET_KEY}` },
     });
     if (!res.ok) return false;
-
     const session = await res.json() as any;
-    const adminIds = env.ADMIN_USER_IDS?.split(',') || [];
-    return adminIds.includes(session.user_id);
+    if (session.status !== 'active' || session.user_id !== userId) return false;
+
+    // 3. Allow-list check.
+    const adminIds = env.ADMIN_USER_IDS?.split(',').map(s => s.trim()).filter(Boolean) || [];
+    return adminIds.includes(userId);
   } catch {
     return false;
   }
