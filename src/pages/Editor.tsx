@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Palette, Monitor, Smartphone, Square, Plus, Volume2, VolumeX } from 'lucide-react';
-import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle, computeAutoColor, STOCK_MUSIC, StockTrack } from '../lib/editor';
+import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle, computeAutoColor, STOCK_MUSIC, StockTrack, COLOR_PRESETS, applyColorPreset, ColorPreset } from '../lib/editor';
 import { getVideo, getAdminVideo } from '../lib/api';
 import { Video } from '../lib/types';
 
@@ -1298,6 +1298,53 @@ export default function Editor() {
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                 </button>
+              </div>
+
+              {/* LUT tile picker — categorised thumbnails, DJI Mimo / Filter picker style.
+                  Each tile applies a CSS filter chain over a real filmstrip frame so the
+                  preview reflects the actual look. */}
+              {(() => {
+                const lutThumbSrc = filmstrip[Math.floor(filmstrip.length / 2)] || filmstrip[0] || null;
+                const categories = Array.from(new Set(COLOR_PRESETS.map(p => p.category)));
+                const applyPreset = (p: ColorPreset) => setColor(applyColorPreset(color, p));
+                return (
+                  <div className="space-y-3 pt-1">
+                    {categories.map(cat => (
+                      <div key={cat}>
+                        <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider mb-1.5">{cat}</div>
+                        <div className="grid grid-cols-3 gap-1.5">
+                          {COLOR_PRESETS.filter(p => p.category === cat).map(p => (
+                            <button
+                              key={p.id}
+                              onClick={() => applyPreset(p)}
+                              className="group relative aspect-[4/3] rounded-md overflow-hidden ring-1 ring-sky-800/40 hover:ring-ember-400/70 transition-all text-left"
+                            >
+                              {lutThumbSrc ? (
+                                <img
+                                  src={lutThumbSrc}
+                                  alt={p.label}
+                                  className="absolute inset-0 w-full h-full object-cover"
+                                  style={{ filter: p.cssFilter }}
+                                />
+                              ) : (
+                                <div className="absolute inset-0 bg-sky-900/60" />
+                              )}
+                              <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent pt-4 pb-1 px-1.5">
+                                <div className="text-[10px] font-display font-bold text-white leading-none truncate drop-shadow-lg">
+                                  {p.label}
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
+              <div className="pt-3 border-t border-sky-800/30">
+                <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider mb-2">Fine-tune</div>
               </div>
               <div className="space-y-2 pt-2 border-t border-sky-800/30">
                 <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Log profile</div>

@@ -152,6 +152,65 @@ export const DEFAULT_COLOR: ColorAdjust = {
   dLogIntensity: 0, horizonLevel: 0,
 };
 
+/** Named colour presets — DJI-style LUT picker. Each preset is a partial
+ *  ColorAdjust that's merged on top of DEFAULT_COLOR when applied, plus a
+ *  matching CSS filter string used to stylise the thumbnail previews so
+ *  each tile looks like the lookup it represents. */
+export interface ColorPreset {
+  id: string;
+  label: string;
+  category: 'Pro' | 'Nature' | 'Urban' | 'Mood';
+  adjust: Partial<ColorAdjust>;
+  /** CSS filter chain for the thumbnail — best-effort match of the look. */
+  cssFilter: string;
+}
+
+export const COLOR_PRESETS: ColorPreset[] = [
+  { id: 'natural',    label: 'Natural',     category: 'Pro',
+    adjust: {}, cssFilter: 'none' },
+  { id: 'cinematic',  label: 'Cinematic',   category: 'Pro',
+    adjust: { exposure: -0.1, contrast: 1.15, saturation: 0.9, shadows: -0.1, highlights: -0.05, temperature: -0.08 },
+    cssFilter: 'contrast(1.15) saturate(0.9) brightness(0.95) hue-rotate(-3deg)' },
+  { id: 'punchy',     label: 'Punchy',      category: 'Pro',
+    adjust: { contrast: 1.3, saturation: 1.25, vibrance: 0.2, shadows: -0.15 },
+    cssFilter: 'contrast(1.3) saturate(1.25) brightness(1.02)' },
+
+  { id: 'golden',     label: 'Golden Hour', category: 'Nature',
+    adjust: { exposure: 0.1, contrast: 1.1, saturation: 1.1, temperature: 0.3, highlights: -0.1 },
+    cssFilter: 'sepia(0.3) saturate(1.2) hue-rotate(-10deg) brightness(1.05)' },
+  { id: 'forest',     label: 'Forest',      category: 'Nature',
+    adjust: { contrast: 1.1, saturation: 1.15, vibrance: 0.25, tint: -0.1, shadows: 0.05 },
+    cssFilter: 'saturate(1.2) hue-rotate(8deg) brightness(0.98)' },
+  { id: 'aerial',     label: 'Aerial Clear',category: 'Nature',
+    adjust: { exposure: 0.05, contrast: 1.2, saturation: 1.1, highlights: 0.1, shadows: -0.05, temperature: -0.15 },
+    cssFilter: 'contrast(1.2) saturate(1.1) brightness(1.05) hue-rotate(-8deg)' },
+
+  { id: 'neonNight',  label: 'Neon Night',  category: 'Urban',
+    adjust: { exposure: -0.2, contrast: 1.35, saturation: 1.1, shadows: -0.3, highlights: 0.15, tint: 0.15 },
+    cssFilter: 'contrast(1.4) saturate(1.1) brightness(0.9) hue-rotate(20deg)' },
+  { id: 'steel',      label: 'Steel',       category: 'Urban',
+    adjust: { contrast: 1.25, saturation: 0.6, temperature: -0.15, highlights: -0.05 },
+    cssFilter: 'contrast(1.25) saturate(0.6) brightness(0.96) hue-rotate(-6deg)' },
+  { id: 'sunsetCity', label: 'Sunset City', category: 'Urban',
+    adjust: { exposure: 0.1, contrast: 1.15, saturation: 1.15, temperature: 0.2, shadows: 0.05 },
+    cssFilter: 'sepia(0.2) saturate(1.2) hue-rotate(-6deg) brightness(1.03)' },
+
+  { id: 'noir',       label: 'Noir',        category: 'Mood',
+    adjust: { saturation: 0, contrast: 1.4, shadows: -0.2, highlights: 0.05 },
+    cssFilter: 'grayscale(1) contrast(1.4) brightness(0.98)' },
+  { id: 'vintage',    label: 'Vintage',     category: 'Mood',
+    adjust: { contrast: 0.95, saturation: 0.85, temperature: 0.15, shadows: 0.1, highlights: -0.1 },
+    cssFilter: 'sepia(0.35) contrast(0.95) saturate(0.85) brightness(1.02)' },
+  { id: 'cyanotype',  label: 'Cyanotype',   category: 'Mood',
+    adjust: { saturation: 0.3, contrast: 1.2, temperature: -0.4, tint: -0.1, shadows: -0.1 },
+    cssFilter: 'grayscale(0.6) sepia(0.5) hue-rotate(180deg) saturate(1.5) brightness(0.95)' },
+];
+
+/** Merge a preset's adjust onto the current colour state. */
+export function applyColorPreset(current: ColorAdjust, preset: ColorPreset): ColorAdjust {
+  return { ...current, ...preset.adjust };
+}
+
 export type DashboardWidgetId =
   | 'date' | 'timer' | 'speed' | 'altitude' | 'gForce' | 'tiltAngle'
   | 'altimeter' | 'location' | 'slope' | 'pace' | 'power' | 'cadence'
