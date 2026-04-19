@@ -130,6 +130,114 @@ export const DEFAULT_COLOR: ColorAdjust = {
   dLogIntensity: 0, horizonLevel: 0,
 };
 
+export type DashboardWidgetId =
+  | 'date' | 'timer' | 'speed' | 'altitude' | 'gForce' | 'tiltAngle'
+  | 'altimeter' | 'location' | 'slope' | 'pace' | 'power' | 'cadence'
+  | 'heartRate' | 'waterDepth' | 'torque' | 'totalMileage';
+
+export interface DashboardWidget {
+  id: DashboardWidgetId;
+  label: string;
+  unit: string;
+  /** For mock data, base value + random amplitude for procedural demo values. */
+  mockBase: number;
+  mockAmp: number;
+  /** Whether this widget applies to drone footage (subset shown by default). */
+  droneRelevant: boolean;
+}
+
+export const DASHBOARD_WIDGETS: DashboardWidget[] = [
+  { id: 'date',         label: 'DATE',    unit: '',      mockBase: 0,   mockAmp: 0,   droneRelevant: true  },
+  { id: 'timer',        label: 'TIMER',   unit: '',      mockBase: 0,   mockAmp: 0,   droneRelevant: true  },
+  { id: 'speed',        label: 'SPEED',   unit: 'km/h',  mockBase: 42,  mockAmp: 8,   droneRelevant: true  },
+  { id: 'altitude',     label: 'ALT',     unit: 'm',     mockBase: 85,  mockAmp: 4,   droneRelevant: true  },
+  { id: 'altimeter',    label: 'ALTIMETER', unit: 'm',   mockBase: 85,  mockAmp: 4,   droneRelevant: true  },
+  { id: 'gForce',       label: 'G-FORCE', unit: 'G',     mockBase: 1.0, mockAmp: 0.3, droneRelevant: true  },
+  { id: 'tiltAngle',    label: 'TILT',    unit: '°',     mockBase: -5,  mockAmp: 8,   droneRelevant: true  },
+  { id: 'location',     label: 'LOCATION', unit: '',     mockBase: 0,   mockAmp: 0,   droneRelevant: true  },
+  { id: 'slope',        label: 'SLOPE',   unit: '%',     mockBase: 0,   mockAmp: 5,   droneRelevant: true  },
+  { id: 'torque',       label: 'TORQUE',  unit: 'N·m',   mockBase: 0,   mockAmp: 2,   droneRelevant: false },
+  { id: 'pace',         label: 'PACE',    unit: 'min/km', mockBase: 5,  mockAmp: 0.5, droneRelevant: false },
+  { id: 'power',        label: 'POWER',   unit: 'W',     mockBase: 180, mockAmp: 30,  droneRelevant: false },
+  { id: 'cadence',      label: 'CADENCE', unit: 'rpm',   mockBase: 85,  mockAmp: 10,  droneRelevant: false },
+  { id: 'heartRate',    label: 'HR',      unit: 'bpm',   mockBase: 120, mockAmp: 15,  droneRelevant: false },
+  { id: 'waterDepth',   label: 'DEPTH',   unit: 'm',     mockBase: 0,   mockAmp: 0,   droneRelevant: false },
+  { id: 'totalMileage', label: 'TOTAL',   unit: 'km',    mockBase: 12,  mockAmp: 0,   droneRelevant: false },
+];
+
+export type DashboardPosition = 'tl' | 'tr' | 'bl' | 'br';
+
+export interface DashboardConfig {
+  enabled: boolean;
+  /** Which widgets are shown, in display order. */
+  widgets: DashboardWidgetId[];
+  position: DashboardPosition;
+}
+
+export const DEFAULT_DASHBOARD: DashboardConfig = {
+  enabled: false,
+  widgets: ['date', 'timer', 'speed', 'altitude'],
+  position: 'tl',
+};
+
+/** Mock data generator — produces plausible values that vary smoothly with video time.
+ *  Replace with SRT/LRF parsing once flight-log support is built. */
+export function mockDashboardData(widgetId: DashboardWidgetId, videoTime: number): string {
+  const w = DASHBOARD_WIDGETS.find(x => x.id === widgetId);
+  if (!w) return '—';
+  if (widgetId === 'date') {
+    const d = new Date();
+    return d.toLocaleDateString('en-AU') + ' ' + d.toLocaleTimeString('en-AU', { hour12: false });
+  }
+  if (widgetId === 'timer') {
+    const m = Math.floor(videoTime / 60);
+    const s = Math.floor(videoTime % 60);
+    const h = Math.floor(videoTime * 100) % 100;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(h).padStart(2, '0')}`;
+  }
+  if (widgetId === 'location') {
+    return `-23.374° · 150.511°`;  // Rockhampton-ish
+  }
+  // Smooth procedural value: base + amp * sin(t)
+  const value = w.mockBase + w.mockAmp * Math.sin(videoTime * 0.3);
+  return `${value.toFixed(widgetId === 'gForce' ? 2 : 1)} ${w.unit}`;
+}
+
+export function drawDashboard(canvas: HTMLCanvasElement, config: DashboardConfig, videoTime: number) {
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (!config.enabled || config.widgets.length === 0) return;
+
+  const pad = 20;
+  const lineH = 64;
+  const labelH = 20;
+  const valueH = 36;
+
+  // Layout: vertical stack of widgets, each showing LABEL + VALUE.
+  ctx.shadowColor = 'rgba(0,0,0,0.85)';
+  ctx.shadowBlur = 12;
+
+  config.widgets.forEach((wid, idx) => {
+    const widget = DASHBOARD_WIDGETS.find(x => x.id === wid);
+    if (!widget) return;
+    const y = pad + idx * lineH;
+    // Label
+    ctx.font = '500 18px "JetBrains Mono", ui-monospace, monospace';
+    ctx.fillStyle = 'rgba(249, 115, 22, 0.95)';  // ember
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(widget.label, pad, y);
+    // Value
+    ctx.font = '700 32px "Outfit", system-ui, sans-serif';
+    ctx.fillStyle = 'white';
+    ctx.fillText(mockDashboardData(wid, videoTime), pad, y + labelH);
+    void valueH;
+  });
+
+  ctx.shadowBlur = 0;
+}
+
 export interface StockTrack {
   id: string;
   title: string;
@@ -202,6 +310,8 @@ export interface SceneHandle {
   setTitle(text: string, inSec: number, outSec: number, position?: TitlePosition): void;
   /** Set color grading (exposure, contrast, saturation, temperature). */
   setColor(adj: ColorAdjust): void;
+  /** Set dashboard/telemetry overlay config. */
+  setDashboard(config: DashboardConfig): void;
   /** Set the keyframe track. When non-empty, keyframes drive the camera and lens
    *  (preset is ignored). Manual drag still applies as an offset on top. */
   setKeyframes(frames: Keyframe[]): void;
@@ -251,6 +361,10 @@ const FRAG = /* glsl */`
   uniform float uTint;        // -1..+1 (+magenta, -green)
   uniform float uVibrance;    // -1..+1 (smart saturation)
   uniform float uDLogIntensity; // 0..1 how much D-Log→Rec709 to apply
+  uniform sampler2D uDash;
+  uniform vec2 uDashAnchor;   // bottom-left of dashboard box in UV
+  uniform vec2 uDashSize;     // size in UV fraction
+  uniform float uDashOpacity; // 0..1
   uniform vec2  uTitlePos;    // title box anchor (x,y) in UV space
   uniform vec2  uTitleSize;   // title box size (w,h) in UV fraction
   const float PI = 3.14159265358979;
@@ -346,6 +460,15 @@ const FRAG = /* glsl */`
         col.rgb = mix(col.rgb, tt.rgb, tt.a * uTitleOpacity);
       }
     }
+
+    // Telemetry / dashboard HUD overlay.
+    if (uDashOpacity > 0.0) {
+      vec2 dUv = (vUv - uDashAnchor) / uDashSize;
+      if (dUv.x >= 0.0 && dUv.x <= 1.0 && dUv.y >= 0.0 && dUv.y <= 1.0) {
+        vec4 dash = texture2D(uDash, dUv);
+        col.rgb = mix(col.rgb, dash.rgb, dash.a * uDashOpacity);
+      }
+    }
     gl_FragColor = col;
   }
 `;
@@ -390,6 +513,16 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   let titleIn = 0;
   let titleOut = 3;
   let titlePosition: TitlePosition = 'center';
+
+  // Dashboard/HUD overlay
+  const dashCanvas = document.createElement('canvas');
+  dashCanvas.width = 512;
+  dashCanvas.height = 512;
+  const dashTex = new THREE.CanvasTexture(dashCanvas);
+  dashTex.colorSpace = THREE.SRGBColorSpace;
+  dashTex.minFilter = THREE.LinearFilter;
+  dashTex.magFilter = THREE.LinearFilter;
+  let dashConfig: DashboardConfig = { ...DEFAULT_DASHBOARD };
   function repaintTitle() {
     const ctx = titleCanvas.getContext('2d')!;
     ctx.clearRect(0, 0, titleCanvas.width, titleCanvas.height);
@@ -452,6 +585,10 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       uTint:          { value: 0 },
       uVibrance:      { value: 0 },
       uDLogIntensity: { value: 0 },
+      uDash:          { value: dashTex },
+      uDashAnchor:    { value: new THREE.Vector2(0.02, 0.70) },
+      uDashSize:      { value: new THREE.Vector2(0.26, 0.28) },
+      uDashOpacity:   { value: 0 },
     },
   });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
@@ -529,8 +666,20 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     if (zoom > ZOOM_MAX) zoom = ZOOM_MAX;
   }, { passive: false });
 
+  let lastDashPaint = 0;
   function loop() {
     raf = requestAnimationFrame(loop);
+
+    // Repaint the dashboard canvas every 100ms with current telemetry values.
+    if (dashConfig.enabled && videoEl) {
+      const now = performance.now();
+      if (now - lastDashPaint > 100) {
+        lastDashPaint = now;
+        drawDashboard(dashCanvas, dashConfig, videoEl.currentTime);
+        dashTex.needsUpdate = true;
+      }
+    }
+
 
     if (videoEl && videoEl.readyState >= 2 && videoEl.duration) {
       let baseYaw: number;
@@ -689,6 +838,19 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       material.uniforms.uVibrance.value = adj.vibrance;
       material.uniforms.uDLogIntensity.value = adj.dLogIntensity;
     },
+    setDashboard(config) {
+      dashConfig = config;
+      material.uniforms.uDashOpacity.value = config.enabled ? 1 : 0;
+      // Position the HUD box based on the corner selection.
+      // uv origin is bottom-left; top positions need y near 1.
+      const w = 0.26, h = 0.28;
+      const margin = 0.025;
+      const { position } = config;
+      const x = (position === 'tr' || position === 'br') ? 1 - w - margin : margin;
+      const y = (position === 'tl' || position === 'tr') ? 1 - h - margin : margin;
+      material.uniforms.uDashAnchor.value.set(x, y);
+      material.uniforms.uDashSize.value.set(w, h);
+    },
     setKeyframes(frames) { keyframes = frames.slice().sort((a, b) => a.t - b.t); },
     captureState() {
       return {
@@ -743,6 +905,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       quad.geometry.dispose();
       wmTex.dispose();
       titleTex.dispose();
+      dashTex.dispose();
       if (videoTex && 'dispose' in videoTex) videoTex.dispose();
     },
   };

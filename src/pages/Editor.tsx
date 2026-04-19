@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Palette, Monitor, Smartphone, Square } from 'lucide-react';
-import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle, computeAutoColor, STOCK_MUSIC, StockTrack } from '../lib/editor';
+import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Palette, Monitor, Smartphone, Square, LayoutDashboard } from 'lucide-react';
+import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, DashboardConfig, DashboardWidgetId, DEFAULT_DASHBOARD, DASHBOARD_WIDGETS, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle, computeAutoColor, STOCK_MUSIC, StockTrack } from '../lib/editor';
 import { getVideo } from '../lib/api';
 import { Video } from '../lib/types';
 
@@ -33,8 +33,9 @@ export default function Editor() {
   const [defaultEasing, setDefaultEasing] = useState<EasingCurve>('smooth');
   type AspectId = '16:9' | '9:16' | '1:1';
   const [aspect, setAspect] = useState<AspectId>('16:9');
-  type TabId = 'motion' | 'lens' | 'speed' | 'keyframes' | 'color' | 'text';
+  type TabId = 'motion' | 'lens' | 'speed' | 'keyframes' | 'color' | 'text' | 'dashboard';
   const [activeTab, setActiveTab] = useState<TabId>('motion');
+  const [dashboard, setDashboard] = useState<DashboardConfig>(DEFAULT_DASHBOARD);
   // Footer panel height — drag the top edge to resize. 0 = collapsed (just the toolbar row).
   const [panelHeight, setPanelHeight] = useState<number>(48);
 
@@ -169,6 +170,11 @@ export default function Editor() {
   useEffect(() => {
     sceneRef.current?.setColor(color);
   }, [color]);
+
+  // Dashboard config
+  useEffect(() => {
+    sceneRef.current?.setDashboard(dashboard);
+  }, [dashboard]);
 
   // Aspect ratio: resize render target when it changes.
   useEffect(() => {
@@ -461,6 +467,7 @@ export default function Editor() {
             { id: 'color',     label: 'Color',     icon: Palette },
             { id: 'text',      label: 'Text',      icon: Type },
             { id: 'keyframes', label: 'Keyframes', icon: Diamond },
+            { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
           ] as const).map(t => {
             const active = activeTab === t.id;
             const Icon = t.icon;
@@ -483,6 +490,9 @@ export default function Editor() {
                   <span className="absolute top-1 right-1 px-1 py-0 text-[9px] leading-tight rounded bg-ember-500/40 text-ember-100">
                     {keyframes.length}
                   </span>
+                ) : null}
+                {t.id === 'dashboard' && dashboard.enabled ? (
+                  <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-emerald-400" />
                 ) : null}
               </button>
             );
@@ -646,6 +656,7 @@ export default function Editor() {
               : activeTab === 'color'     ? 'Color'
               : activeTab === 'text'      ? 'Text'
               : activeTab === 'keyframes' ? 'Keyframes'
+              : activeTab === 'dashboard' ? 'Dashboard · Telemetry'
               : ''}
             </h3>
           </div>
@@ -877,6 +888,89 @@ export default function Editor() {
               <p className="text-[11px] text-sky-500 leading-relaxed pt-2 border-t border-sky-800/30">
                 {title ? `Shows for the first ${titleDuration.toFixed(1)}s of the trim window, with a 0.3s fade in and out.` : 'Type a title to add a card overlay at the start of the clip.'}
               </p>
+            </div>
+          ) : null}
+
+          {activeTab === 'dashboard' ? (
+            <div className="space-y-4">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={dashboard.enabled}
+                  onChange={(e) => setDashboard({ ...dashboard, enabled: e.target.checked })}
+                  className="w-4 h-4 accent-emerald-500"
+                />
+                <div>
+                  <div className="text-sm font-medium text-sky-100">Enable dashboard</div>
+                  <div className="text-[10px] text-sky-500">Compose telemetry over the video</div>
+                </div>
+              </label>
+              <div className="space-y-2 pt-2 border-t border-sky-800/30">
+                <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Position</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {([
+                    { id: 'tl', label: 'Top-left' },
+                    { id: 'tr', label: 'Top-right' },
+                    { id: 'bl', label: 'Bottom-left' },
+                    { id: 'br', label: 'Bottom-right' },
+                  ] as const).map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => setDashboard({ ...dashboard, position: p.id })}
+                      className={
+                        'py-2 text-xs rounded transition-colors ' +
+                        (dashboard.position === p.id
+                          ? 'bg-ember-500/20 text-ember-300 border border-ember-500/40'
+                          : 'bg-sky-900/30 text-sky-400 border border-sky-800/30 hover:bg-sky-800/40')
+                      }
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2 pt-2 border-t border-sky-800/30">
+                <div className="flex items-center justify-between">
+                  <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Widgets</div>
+                  <span className="text-[10px] text-sky-600 font-mono">{dashboard.widgets.length} active</span>
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {DASHBOARD_WIDGETS.map(w => {
+                    const active = dashboard.widgets.includes(w.id);
+                    return (
+                      <button
+                        key={w.id}
+                        onClick={() => {
+                          setDashboard({
+                            ...dashboard,
+                            widgets: active
+                              ? dashboard.widgets.filter(x => x !== w.id)
+                              : [...dashboard.widgets, w.id],
+                          });
+                        }}
+                        className={
+                          'aspect-square flex flex-col items-center justify-center rounded text-[9px] font-mono transition-colors border ' +
+                          (active
+                            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/40'
+                            : 'bg-sky-900/30 text-sky-500 border-sky-800/30 hover:bg-sky-800/40 ' + (w.droneRelevant ? '' : 'opacity-60'))
+                        }
+                        title={`${w.label}${w.droneRelevant ? '' : ' (not drone-relevant)'}`}
+                      >
+                        <span className="text-[10px] leading-tight">{w.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="pt-2 border-t border-sky-800/30">
+                <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider mb-2">Data source</div>
+                <div className="px-3 py-2 rounded-md bg-sky-900/30 border border-sky-800/30 text-xs text-sky-500">
+                  Mock data (procedural)
+                </div>
+                <p className="text-[10px] text-sky-600 mt-2 leading-relaxed">
+                  Uploading DJI SRT / LRF flight logs for real GPS/altitude/speed values is queued. Mock values animate based on the video playhead so you can preview layouts.
+                </p>
+              </div>
             </div>
           ) : null}
 
