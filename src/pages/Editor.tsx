@@ -450,106 +450,142 @@ export default function Editor() {
         </button>
       </header>
 
-      {/* Stage */}
-      <div className="flex-1 relative bg-black min-h-0 flex items-center justify-center">
-        <canvas
-          ref={canvasRef}
-          className="max-w-full max-h-full"
-          style={{ aspectRatio: aspect.replace(':', ' / ') }}
-          onPointerDown={handleCanvasShiftClick}
-        />
+      {/* Main workspace: left icons | center preview+timeline+transport | right property sidebar */}
+      <div className="flex-1 flex min-h-0">
+        {/* Left icon strip — tool selector (DJI-like) */}
+        <aside className="w-16 border-r border-sky-800/30 bg-sky-950/40 flex flex-col items-stretch py-2 flex-shrink-0">
+          {([
+            { id: 'motion',    label: 'Motion',    icon: Wand2 },
+            { id: 'lens',      label: 'Lens',      icon: Aperture },
+            { id: 'speed',     label: 'Speed',     icon: Gauge },
+            { id: 'color',     label: 'Color',     icon: Palette },
+            { id: 'text',      label: 'Text',      icon: Type },
+            { id: 'keyframes', label: 'Keyframes', icon: Diamond },
+          ] as const).map(t => {
+            const active = activeTab === t.id;
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                title={t.label}
+                className={
+                  'relative h-14 flex flex-col items-center justify-center gap-1 transition-colors ' +
+                  (active
+                    ? 'text-ember-300 bg-ember-500/10'
+                    : 'text-sky-500 hover:text-sky-300 hover:bg-sky-900/40')
+                }
+              >
+                {active ? <div className="absolute left-0 top-2 bottom-2 w-0.5 bg-ember-400 rounded-r" /> : null}
+                <Icon className="w-4 h-4" />
+                <span className="text-[9px] font-mono uppercase tracking-wider">{t.label}</span>
+                {t.id === 'keyframes' && keyframes.length > 0 ? (
+                  <span className="absolute top-1 right-1 px-1 py-0 text-[9px] leading-tight rounded bg-ember-500/40 text-ember-100">
+                    {keyframes.length}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </aside>
 
-        {phase === 'loading-meta' || phase === 'loading-video' ? (
-          <div className="absolute inset-0 flex items-center justify-center text-sky-400 text-sm">
-            <Loader2 className="w-4 h-4 animate-spin mr-2" />
-            {phase === 'loading-meta' ? 'Loading clip…' : 'Streaming 360 source…'}
-          </div>
-        ) : null}
+        {/* Center column: stage + timeline + transport */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 relative bg-black min-h-0 flex items-center justify-center">
+            <canvas
+              ref={canvasRef}
+              className="max-w-full max-h-full"
+              style={{ aspectRatio: aspect.replace(':', ' / ') }}
+              onPointerDown={handleCanvasShiftClick}
+            />
 
-        {phase === 'error' ? (
-          <div className="absolute inset-0 flex items-center justify-center flex-col gap-4 text-center px-6">
-            <div className="text-sky-300 font-medium max-w-md">{errorMsg || 'Something went wrong.'}</div>
-            <label className="btn-ember text-sm px-5 py-2.5 cursor-pointer">
-              <Upload className="w-4 h-4" />
-              Load 360 MP4
-              <input
-                type="file"
-                accept="video/*"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (!f) return;
-                  const url = URL.createObjectURL(f);
-                  setSourceUrl(url);
-                  setPhase('loading-video');
-                  setErrorMsg('');
-                }}
-              />
-            </label>
-            <Link to="/browse" className="btn-ghost text-xs">Or browse clips</Link>
-          </div>
-        ) : null}
-
-        {phase === 'exporting' ? (
-          <div className="absolute inset-x-0 bottom-0 bg-sky-950/90 backdrop-blur border-t border-sky-800/50 px-6 py-4 flex items-center gap-4">
-            <Loader2 className="w-5 h-5 animate-spin text-ember-400" />
-            <div className="flex-1">
-              <div className="text-sm font-medium">Rendering your edit…</div>
-              <div className="text-xs text-sky-400 font-mono">
-                {exportSizeMB} MB · {(exportElapsed / 1000).toFixed(1)}s elapsed · real-time render
+            {phase === 'loading-meta' || phase === 'loading-video' ? (
+              <div className="absolute inset-0 flex items-center justify-center text-sky-400 text-sm">
+                <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                {phase === 'loading-meta' ? 'Loading clip…' : 'Streaming 360 source…'}
               </div>
-            </div>
-            <button onClick={cancelExport} className="btn-ghost text-xs">Cancel</button>
-          </div>
-        ) : null}
+            ) : null}
 
-        {phase === 'done' && downloadBlobUrl ? (
-          <div className="absolute inset-x-0 bottom-0 bg-sky-950/90 backdrop-blur border-t border-sky-800/50 px-6 py-4 flex items-center gap-4">
-            <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-              <Film className="w-5 h-5" />
-            </div>
-            <div className="flex-1">
-              <div className="text-sm font-medium">Your edit is ready.</div>
-              <div className="text-xs text-sky-400 font-mono">
-                {exportSizeMB} MB · watermarked · free export
+            {phase === 'error' ? (
+              <div className="absolute inset-0 flex items-center justify-center flex-col gap-4 text-center px-6">
+                <div className="text-sky-300 font-medium max-w-md">{errorMsg || 'Something went wrong.'}</div>
+                <label className="btn-ember text-sm px-5 py-2.5 cursor-pointer">
+                  <Upload className="w-4 h-4" />
+                  Load 360 MP4
+                  <input
+                    type="file"
+                    accept="video/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (!f) return;
+                      const url = URL.createObjectURL(f);
+                      setSourceUrl(url);
+                      setPhase('loading-video');
+                      setErrorMsg('');
+                    }}
+                  />
+                </label>
+                <Link to="/browse" className="btn-ghost text-xs">Or browse clips</Link>
               </div>
-            </div>
-            <a
-              href={downloadBlobUrl}
-              download={`skystock-${id || 'edit'}-${aspect.replace(':', 'x')}.${downloadExt}`}
-              className="btn-ember text-sm px-5 py-2.5"
-            >
-              <Download className="w-4 h-4" /> Download
-            </a>
-            <button
-              onClick={() => setPhase('ready')}
-              className="btn-ghost text-xs"
-            >
-              Edit more
-            </button>
+            ) : null}
+
+            {phase === 'exporting' ? (
+              <div className="absolute inset-x-0 bottom-0 bg-sky-950/90 backdrop-blur border-t border-sky-800/50 px-6 py-4 flex items-center gap-4">
+                <Loader2 className="w-5 h-5 animate-spin text-ember-400" />
+                <div className="flex-1">
+                  <div className="text-sm font-medium">Rendering your edit…</div>
+                  <div className="text-xs text-sky-400 font-mono">
+                    {exportSizeMB} MB · {(exportElapsed / 1000).toFixed(1)}s elapsed · real-time render
+                  </div>
+                </div>
+                <button onClick={cancelExport} className="btn-ghost text-xs">Cancel</button>
+              </div>
+            ) : null}
+
+            {phase === 'done' && downloadBlobUrl ? (
+              <div className="absolute inset-x-0 bottom-0 bg-sky-950/90 backdrop-blur border-t border-sky-800/50 px-6 py-4 flex items-center gap-4">
+                <div className="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <Film className="w-5 h-5" />
+                </div>
+                <div className="flex-1">
+                  <div className="text-sm font-medium">Your edit is ready.</div>
+                  <div className="text-xs text-sky-400 font-mono">
+                    {exportSizeMB} MB · watermarked · free export
+                  </div>
+                </div>
+                <a
+                  href={downloadBlobUrl}
+                  download={`skystock-${id || 'edit'}-${aspect.replace(':', 'x')}.${downloadExt}`}
+                  className="btn-ember text-sm px-5 py-2.5"
+                >
+                  <Download className="w-4 h-4" /> Download
+                </a>
+                <button onClick={() => setPhase('ready')} className="btn-ghost text-xs">
+                  Edit more
+                </button>
+              </div>
+            ) : null}
           </div>
-        ) : null}
-      </div>
 
-      {/* Timeline: scrub + trim handles + keyframe markers */}
-      {duration > 0 ? (
-        <Timeline
-          duration={duration}
-          playhead={playhead}
-          trimIn={trimIn}
-          trimOut={trimOut}
-          keyframes={keyframes}
-          disabled={phase === 'exporting'}
-          onSeek={seekTo}
-          onTrimChange={(a, b) => { setTrimIn(a); setTrimOut(b); }}
-          onDeleteKeyframe={deleteKeyframe}
-          onMoveKeyframe={moveKeyframe}
-        />
-      ) : null}
+          {/* Timeline: scrub + trim handles + keyframe markers */}
+          {duration > 0 ? (
+            <Timeline
+              duration={duration}
+              playhead={playhead}
+              trimIn={trimIn}
+              trimOut={trimOut}
+              keyframes={keyframes}
+              disabled={phase === 'exporting'}
+              onSeek={seekTo}
+              onTrimChange={(a, b) => { setTrimIn(a); setTrimOut(b); }}
+              onDeleteKeyframe={deleteKeyframe}
+              onMoveKeyframe={moveKeyframe}
+            />
+          ) : null}
 
-      {/* Unified toolbar: transport + tabs in one row */}
-      <footer className="border-t border-sky-800/30 flex-shrink-0 bg-sky-950/30">
-        <div className="px-4 h-11 flex items-center gap-2 border-b border-sky-800/30">
+          {/* Transport bar (compact, under timeline) */}
+          <div className="px-4 h-10 flex items-center gap-2 border-t border-sky-800/30 flex-shrink-0 bg-sky-950/30">
           <button
             onClick={togglePlay}
             disabled={phase !== 'ready'}
@@ -592,289 +628,339 @@ export default function Editor() {
               </button>
             ))}
           </div>
-          <div className="w-px h-5 bg-sky-800/50 mx-1 flex-shrink-0" />
-          {([
-            { id: 'motion',    label: 'Motion',    icon: Wand2 },
-            { id: 'lens',      label: 'Lens',      icon: Aperture },
-            { id: 'speed',     label: 'Speed',     icon: Gauge },
-            { id: 'color',     label: 'Color',     icon: Palette },
-            { id: 'text',      label: 'Text',      icon: Type },
-            { id: 'keyframes', label: 'Keyframes', icon: Diamond },
-          ] as const).map(t => {
-            const active = activeTab === t.id;
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setActiveTab(t.id)}
-                className={
-                  'px-3 h-8 text-xs font-medium uppercase tracking-wider flex items-center gap-1.5 rounded-md transition-colors ' +
-                  (active
-                    ? 'text-ember-300 bg-ember-500/10'
-                    : 'text-sky-500 hover:text-sky-300 hover:bg-sky-800/30')
-                }
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {t.label}
-                {t.id === 'keyframes' && keyframes.length > 0 ? (
-                  <span className="ml-0.5 px-1.5 py-0.5 text-[10px] leading-none rounded bg-ember-500/30 text-ember-200">
-                    {keyframes.length}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
+          <div className="flex-1" />
+          <div className="text-[11px] text-sky-600 font-mono hidden md:block">
+            Drag to reframe · scroll to zoom · shift-click to track
+          </div>
+        </div>
+        {/* End center column */}
         </div>
 
-        {/* Resize handle */}
-        <div
-          className="h-1.5 cursor-ns-resize bg-sky-900/30 hover:bg-sky-700/60 transition-colors relative group"
-          onPointerDown={startPanelResize}
-          title="Drag to resize · double-click to toggle"
-          onDoubleClick={() => setPanelHeight(panelHeight < 48 ? 48 : panelHeight < 120 ? 180 : 0)}
-        >
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 h-0.5 w-10 bg-sky-700/80 group-hover:bg-sky-400 rounded-full" />
-        </div>
-        {/* Tab content — height is user-controlled via the handle above */}
-        <div
-          className="px-4 flex items-center gap-2 overflow-auto"
-          style={{ height: `${panelHeight}px`, minHeight: 0, flexWrap: panelHeight > 60 ? 'wrap' : 'nowrap' }}
-        >
+        {/* Right property sidebar */}
+        <aside className="w-[320px] border-l border-sky-800/30 bg-sky-950/40 flex flex-col flex-shrink-0 overflow-hidden">
+          <div className="px-4 h-10 flex items-center border-b border-sky-800/30 flex-shrink-0">
+            <h3 className="font-display font-semibold text-xs uppercase tracking-wider text-ember-400">
+              {activeTab === 'motion'     ? 'Motion'
+              : activeTab === 'lens'      ? 'Lens'
+              : activeTab === 'speed'     ? 'Speed'
+              : activeTab === 'color'     ? 'Color'
+              : activeTab === 'text'      ? 'Text'
+              : activeTab === 'keyframes' ? 'Keyframes'
+              : ''}
+            </h3>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {activeTab === 'motion' ? (
-            <>
-              {PRESETS.map(p => (
-                <button
-                  key={p.id}
-                  onClick={() => setPreset(p.id)}
-                  disabled={phase !== 'ready'}
-                  title={p.description}
-                  className={
-                    'px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex-shrink-0 ' +
-                    (preset === p.id
-                      ? 'bg-ember-500/20 text-ember-300 border border-ember-500/40'
-                      : 'bg-sky-900/30 text-sky-300 border border-sky-800/30 hover:bg-sky-800/40')
-                  }
-                >
-                  {p.label}
-                </button>
-              ))}
-              <div className="flex-1" />
-              <div className="text-[11px] text-sky-600 font-mono truncate">
-                {PRESETS.find(p => p.id === preset)?.description}
+            <div className="space-y-3">
+              <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Preset</div>
+              <div className="grid grid-cols-2 gap-2">
+                {PRESETS.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => setPreset(p.id)}
+                    disabled={phase !== 'ready'}
+                    title={p.description}
+                    className={
+                      'px-3 py-2 rounded-lg text-sm font-medium transition-all text-left ' +
+                      (preset === p.id
+                        ? 'bg-ember-500/20 text-ember-300 border border-ember-500/40'
+                        : 'bg-sky-900/30 text-sky-300 border border-sky-800/30 hover:bg-sky-800/40')
+                    }
+                  >
+                    {p.label}
+                  </button>
+                ))}
               </div>
-            </>
+              <p className="text-[11px] text-sky-500 leading-relaxed">
+                {PRESETS.find(p => p.id === preset)?.description}
+              </p>
+              <div className="pt-3 border-t border-sky-800/30">
+                <button
+                  onClick={() => sceneRef.current?.resetFrame()}
+                  disabled={phase !== 'ready'}
+                  className="btn-ghost text-xs w-full justify-center disabled:opacity-40"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  Reset framing
+                </button>
+                <p className="text-[11px] text-sky-600 mt-2 leading-relaxed">
+                  Drag the viewport to reframe · scroll to zoom · shift-click to track a subject.
+                </p>
+              </div>
+            </div>
           ) : null}
 
           {activeTab === 'lens' ? (
-            <>
-              {LENSES.map(l => (
-                <button
-                  key={l.id}
-                  onClick={() => setLens(l.id)}
-                  disabled={phase !== 'ready'}
-                  title={l.description}
-                  className={
-                    'px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex-shrink-0 ' +
-                    (lens === l.id
-                      ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                      : 'bg-sky-900/30 text-sky-400 border border-sky-800/30 hover:bg-sky-800/40')
-                  }
-                >
-                  {l.label}
-                </button>
-              ))}
-              <div className="flex-1" />
-              <div className="text-[11px] text-sky-600 font-mono truncate">
-                {LENSES.find(l => l.id === lens)?.description}
+            <div className="space-y-3">
+              <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Projection</div>
+              <div className="space-y-1.5">
+                {LENSES.map(l => (
+                  <button
+                    key={l.id}
+                    onClick={() => setLens(l.id)}
+                    disabled={phase !== 'ready'}
+                    className={
+                      'w-full px-3 py-2 rounded-lg text-sm font-medium transition-all text-left ' +
+                      (lens === l.id
+                        ? 'bg-sky-500/20 text-sky-200 border border-sky-500/40'
+                        : 'bg-sky-900/30 text-sky-300 border border-sky-800/30 hover:bg-sky-800/40')
+                    }
+                  >
+                    <div>{l.label}</div>
+                    <div className="text-[10px] text-sky-500 font-mono mt-0.5">FOV {l.fov}°</div>
+                  </button>
+                ))}
               </div>
-            </>
+              <p className="text-[11px] text-sky-500 leading-relaxed">
+                {LENSES.find(l => l.id === lens)?.description}
+              </p>
+            </div>
           ) : null}
 
           {activeTab === 'speed' ? (
-            <>
-              {[0.25, 0.5, 1, 2, 4].map(s => (
-                <button
-                  key={s}
-                  onClick={() => setSpeed(s)}
-                  disabled={phase !== 'ready'}
-                  className={
-                    'px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all flex-shrink-0 font-mono ' +
-                    (speed === s
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                      : 'bg-sky-900/30 text-sky-400 border border-sky-800/30 hover:bg-sky-800/40')
-                  }
-                >
-                  {s}×
-                </button>
-              ))}
-              <div className="flex-1" />
-              <div className="text-[11px] text-sky-600 font-mono">
-                {speed === 1 ? 'Real-time' : speed < 1 ? 'Slow-motion' : 'Hyperlapse'} · bakes into export
+            <div className="space-y-3">
+              <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Rate</div>
+              <div className="grid grid-cols-5 gap-1.5">
+                {[0.25, 0.5, 1, 2, 4].map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setSpeed(s)}
+                    disabled={phase !== 'ready'}
+                    className={
+                      'py-2 rounded-md text-xs font-mono transition-all ' +
+                      (speed === s
+                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                        : 'bg-sky-900/30 text-sky-400 border border-sky-800/30 hover:bg-sky-800/40')
+                    }
+                  >
+                    {s}×
+                  </button>
+                ))}
               </div>
-            </>
-          ) : null}
-
-          {activeTab === 'keyframes' ? (
-            <>
-              <button
-                onClick={addKeyframe}
-                disabled={phase !== 'ready'}
-                className="px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex-shrink-0 bg-ember-500/20 text-ember-300 border border-ember-500/40 hover:bg-ember-500/30 disabled:opacity-40"
-                title="Capture current frame at the playhead"
-              >
-                <Diamond className="w-3.5 h-3.5 fill-current" />
-                Add @ {formatTime(playhead)}
-              </button>
-              <label className="text-[10px] text-sky-500 uppercase tracking-wider ml-2 flex-shrink-0">
-                Transition
-              </label>
-              <select
-                value={defaultEasing}
-                onChange={(e) => setDefaultEasing(e.target.value as EasingCurve)}
-                className="h-8 px-2 bg-sky-900/40 border border-sky-800/40 rounded text-xs text-sky-200 flex-shrink-0 focus:outline-none focus:border-ember-500/50"
-                title="Easing curve for new keyframes (existing keyframes keep their own curve)"
-              >
-                <option value="linear">Linear</option>
-                <option value="smooth">Smooth (S-curve)</option>
-                <option value="ease-in">Ease in</option>
-                <option value="ease-out">Ease out</option>
-                <option value="hold">Hold</option>
-              </select>
-              {keyframes.length > 0 ? (
-                <button
-                  onClick={clearKeyframes}
-                  disabled={phase !== 'ready'}
-                  className="btn-ghost text-xs flex-shrink-0 disabled:opacity-40"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Clear
-                </button>
-              ) : null}
-              <div className="flex-1" />
-              <div className="text-[11px] text-sky-600 font-mono truncate">
-                {keyframes.length === 0
-                  ? 'Shift-click the viewport to track a subject · Shift-click a diamond to delete'
-                  : `${keyframes.length} keyframe${keyframes.length === 1 ? '' : 's'} · Shift-click viewport to track · Shift-click diamond to delete`}
+              <div>
+                <input
+                  type="range" min={0.1} max={4} step={0.05}
+                  value={speed}
+                  onChange={(e) => setSpeed(Number(e.target.value))}
+                  className="w-full accent-emerald-500"
+                />
+                <div className="flex justify-between text-[10px] font-mono text-sky-600 mt-1">
+                  <span>0.1×</span><span>1×</span><span>4×</span>
+                </div>
               </div>
-            </>
+              <p className="text-[11px] text-sky-500 leading-relaxed">
+                {speed === 1 ? 'Real-time — original speed.' : speed < 1 ? `Slow-motion — ${(1 / speed).toFixed(2)}× dilation.` : `Hyperlapse — ${speed}× compression.`} Bakes into export.
+              </p>
+            </div>
           ) : null}
 
           {activeTab === 'color' ? (
-            <div className="flex items-center gap-x-4 gap-y-2 flex-wrap flex-1">
-              <button
-                onClick={() => {
-                  const v = videoElRef.current;
-                  if (!v) return;
-                  const auto = computeAutoColor(v, color.dLogIntensity > 0);
-                  setColor({ ...color, ...auto, dLogIntensity: auto.dLogM ? 1 : color.dLogIntensity });
-                }}
-                disabled={phase !== 'ready'}
-                className="px-3 h-8 rounded-md bg-ember-500/20 text-ember-300 border border-ember-500/40 hover:bg-ember-500/30 text-xs font-medium transition-colors disabled:opacity-40 flex-shrink-0"
-                title="Sample the current frame and derive exposure/contrast/saturation/temperature"
-              >
-                Auto
-              </button>
-              <label className="flex items-center gap-1.5 text-xs flex-shrink-0">
-                <span className="text-sky-300 font-medium">D-Log M</span>
-                <input
-                  type="range" min={0} max={1} step={0.01}
-                  value={color.dLogIntensity}
-                  onChange={(e) => setColor({ ...color, dLogIntensity: Number(e.target.value) })}
-                  className="w-16 accent-sky-500"
-                  title="Strength of the D-Log M → Rec.709 tonemap"
-                />
-                <span className="font-mono text-sky-500 tabular-nums w-8 text-right">
-                  {Math.round(color.dLogIntensity * 100)}%
-                </span>
-              </label>
-              <div className="w-px h-5 bg-sky-800/50 flex-shrink-0" />
-              {([
-                { key: 'exposure',    label: 'Exp',  min: -2, max: 2, step: 0.05 },
-                { key: 'contrast',    label: 'Con',  min:  0, max: 2, step: 0.05 },
-                { key: 'highlights',  label: 'Hi',   min: -1, max: 1, step: 0.05 },
-                { key: 'shadows',     label: 'Sh',   min: -1, max: 1, step: 0.05 },
-                { key: 'saturation',  label: 'Sat',  min:  0, max: 2, step: 0.05 },
-                { key: 'vibrance',    label: 'Vib',  min: -1, max: 1, step: 0.05 },
-                { key: 'temperature', label: 'Temp', min: -1, max: 1, step: 0.05 },
-                { key: 'tint',        label: 'Tint', min: -1, max: 1, step: 0.05 },
-              ] as const).map(s => (
-                <label key={s.key} className="flex items-center gap-1.5 text-xs flex-shrink-0">
-                  <span className="text-sky-500 w-8 font-mono uppercase">{s.label}</span>
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    const v = videoElRef.current;
+                    if (!v) return;
+                    const auto = computeAutoColor(v, color.dLogIntensity > 0);
+                    setColor({ ...color, ...auto, dLogIntensity: auto.dLogM ? 1 : color.dLogIntensity });
+                  }}
+                  disabled={phase !== 'ready'}
+                  className="flex-1 px-3 py-2 rounded-md bg-ember-500/20 text-ember-300 border border-ember-500/40 hover:bg-ember-500/30 text-xs font-medium transition-colors disabled:opacity-40"
+                >
+                  Auto
+                </button>
+                <button
+                  onClick={() => setColor(DEFAULT_COLOR)}
+                  className="btn-ghost text-xs"
+                  title="Reset all"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <div className="space-y-2 pt-2 border-t border-sky-800/30">
+                <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Log profile</div>
+                <label className="flex items-center gap-2 text-xs">
+                  <span className="text-sky-300 w-16 font-medium">D-Log M</span>
                   <input
-                    type="range"
-                    min={s.min} max={s.max} step={s.step}
-                    value={color[s.key]}
-                    onChange={(e) => setColor({ ...color, [s.key]: Number(e.target.value) })}
-                    className="w-20 accent-ember-500"
+                    type="range" min={0} max={1} step={0.01}
+                    value={color.dLogIntensity}
+                    onChange={(e) => setColor({ ...color, dLogIntensity: Number(e.target.value) })}
+                    className="flex-1 accent-sky-500"
                   />
-                  <span className="font-mono text-sky-400 tabular-nums w-9 text-right">
-                    {color[s.key] >= 0 ? '+' : ''}{color[s.key].toFixed(2)}
-                  </span>
+                  <span className="font-mono text-sky-500 tabular-nums w-8 text-right">{Math.round(color.dLogIntensity * 100)}%</span>
                 </label>
-              ))}
-              <button
-                onClick={() => setColor(DEFAULT_COLOR)}
-                className="btn-ghost text-xs flex-shrink-0"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                Reset
-              </button>
+              </div>
+              <div className="space-y-2 pt-2 border-t border-sky-800/30">
+                <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Light</div>
+                {([
+                  { key: 'exposure',    label: 'Exposure',   min: -2, max: 2, step: 0.05 },
+                  { key: 'contrast',    label: 'Contrast',   min:  0, max: 2, step: 0.05 },
+                  { key: 'highlights',  label: 'Highlights', min: -1, max: 1, step: 0.05 },
+                  { key: 'shadows',     label: 'Shadows',    min: -1, max: 1, step: 0.05 },
+                ] as const).map(s => (
+                  <label key={s.key} className="flex items-center gap-2 text-xs">
+                    <span className="text-sky-300 w-16">{s.label}</span>
+                    <input type="range" min={s.min} max={s.max} step={s.step} value={color[s.key]}
+                      onChange={(e) => setColor({ ...color, [s.key]: Number(e.target.value) })}
+                      className="flex-1 accent-ember-500" />
+                    <span className="font-mono text-sky-500 tabular-nums w-10 text-right">
+                      {color[s.key] >= 0 ? '+' : ''}{color[s.key].toFixed(2)}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <div className="space-y-2 pt-2 border-t border-sky-800/30">
+                <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Color</div>
+                {([
+                  { key: 'temperature', label: 'Temp',       min: -1, max: 1, step: 0.05 },
+                  { key: 'tint',        label: 'Tint',       min: -1, max: 1, step: 0.05 },
+                  { key: 'saturation',  label: 'Saturation', min:  0, max: 2, step: 0.05 },
+                  { key: 'vibrance',    label: 'Vibrance',   min: -1, max: 1, step: 0.05 },
+                ] as const).map(s => (
+                  <label key={s.key} className="flex items-center gap-2 text-xs">
+                    <span className="text-sky-300 w-16">{s.label}</span>
+                    <input type="range" min={s.min} max={s.max} step={s.step} value={color[s.key]}
+                      onChange={(e) => setColor({ ...color, [s.key]: Number(e.target.value) })}
+                      className="flex-1 accent-ember-500" />
+                    <span className="font-mono text-sky-500 tabular-nums w-10 text-right">
+                      {color[s.key] >= 0 ? '+' : ''}{color[s.key].toFixed(2)}
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
           ) : null}
 
           {activeTab === 'text' ? (
-            <div className="flex items-center gap-3 flex-1">
+            <div className="space-y-3">
+              <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Title card</div>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value.slice(0, 60))}
                 placeholder="Title card text…"
                 maxLength={60}
-                className="h-8 px-3 flex-1 max-w-[320px] rounded bg-sky-900/40 border border-sky-800/40 text-sm text-sky-100 placeholder-sky-600 focus:outline-none focus:border-ember-500/50"
+                className="w-full h-9 px-3 rounded bg-sky-900/40 border border-sky-800/40 text-sm text-sky-100 placeholder-sky-600 focus:outline-none focus:border-ember-500/50"
               />
               <label className="flex items-center gap-2 text-xs">
-                <span className="text-sky-400">Duration</span>
-                <input
-                  type="range" min={1} max={10} step={0.5}
+                <span className="text-sky-300 w-16">Duration</span>
+                <input type="range" min={1} max={10} step={0.5}
                   value={titleDuration}
                   onChange={(e) => setTitleDuration(Number(e.target.value))}
-                  className="w-24 accent-ember-500"
-                />
-                <span className="font-mono text-sky-500 tabular-nums w-10">{titleDuration.toFixed(1)}s</span>
+                  className="flex-1 accent-ember-500" />
+                <span className="font-mono text-sky-500 tabular-nums w-10 text-right">{titleDuration.toFixed(1)}s</span>
               </label>
-              <div className="flex items-center gap-1">
-                {(['top', 'center', 'bottom'] as const).map(p => (
-                  <button
-                    key={p}
-                    onClick={() => setTitlePosition(p)}
-                    className={
-                      'px-2.5 h-7 text-xs rounded transition-colors capitalize ' +
-                      (titlePosition === p
-                        ? 'bg-ember-500/20 text-ember-300 border border-ember-500/40'
-                        : 'bg-sky-900/30 text-sky-400 border border-sky-800/30 hover:bg-sky-800/40')
-                    }
-                  >
-                    {p}
-                  </button>
-                ))}
+              <div>
+                <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider mb-1.5">Position</div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {(['top', 'center', 'bottom'] as const).map(p => (
+                    <button
+                      key={p}
+                      onClick={() => setTitlePosition(p)}
+                      className={
+                        'py-2 text-xs rounded transition-colors capitalize ' +
+                        (titlePosition === p
+                          ? 'bg-ember-500/20 text-ember-300 border border-ember-500/40'
+                          : 'bg-sky-900/30 text-sky-400 border border-sky-800/30 hover:bg-sky-800/40')
+                      }
+                    >
+                      {p}
+                    </button>
+                  ))}
+                </div>
               </div>
               {title ? (
-                <button
-                  onClick={() => setTitle('')}
-                  className="btn-ghost text-xs flex-shrink-0"
-                >
-                  <X className="w-3.5 h-3.5" />
-                  Clear
+                <button onClick={() => setTitle('')} className="btn-ghost text-xs w-full justify-center">
+                  <X className="w-3.5 h-3.5" /> Clear
                 </button>
               ) : null}
-              <div className="flex-1" />
-              <div className="text-[11px] text-sky-600 font-mono">
-                {title ? `Shows first ${titleDuration.toFixed(1)}s` : 'Type to add a title card'}
-              </div>
+              <p className="text-[11px] text-sky-500 leading-relaxed pt-2 border-t border-sky-800/30">
+                {title ? `Shows for the first ${titleDuration.toFixed(1)}s of the trim window, with a 0.3s fade in and out.` : 'Type a title to add a card overlay at the start of the clip.'}
+              </p>
             </div>
           ) : null}
-        </div>
-      </footer>
+
+          {activeTab === 'keyframes' ? (
+            <div className="space-y-3">
+              <button
+                onClick={addKeyframe}
+                disabled={phase !== 'ready'}
+                className="w-full px-3 py-2 rounded-md bg-ember-500/20 text-ember-300 border border-ember-500/40 hover:bg-ember-500/30 text-sm font-medium transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
+              >
+                <Diamond className="w-3.5 h-3.5 fill-current" />
+                Add keyframe @ {formatTime(playhead)}
+              </button>
+              <label className="flex items-center gap-2 text-xs">
+                <span className="text-sky-300 w-20">Transition</span>
+                <select
+                  value={defaultEasing}
+                  onChange={(e) => setDefaultEasing(e.target.value as EasingCurve)}
+                  className="flex-1 h-8 px-2 bg-sky-900/40 border border-sky-800/40 rounded text-xs text-sky-200 focus:outline-none focus:border-ember-500/50"
+                >
+                  <option value="linear">Linear</option>
+                  <option value="smooth">Smooth (S-curve)</option>
+                  <option value="ease-in">Ease in</option>
+                  <option value="ease-out">Ease out</option>
+                  <option value="hold">Hold</option>
+                </select>
+              </label>
+              <div className="pt-2 border-t border-sky-800/30">
+                <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider mb-2">
+                  {keyframes.length} keyframe{keyframes.length === 1 ? '' : 's'}
+                </div>
+                {keyframes.length === 0 ? (
+                  <p className="text-[11px] text-sky-600 leading-relaxed">
+                    Shift-click the viewport to track a subject, or use the button above to capture the current frame.
+                  </p>
+                ) : (
+                  <div className="space-y-1 max-h-60 overflow-y-auto">
+                    {keyframes.map(kf => (
+                      <div key={kf.t} className="flex items-center gap-2 px-2 py-1.5 rounded bg-sky-900/30 border border-sky-800/30">
+                        <Diamond className="w-2.5 h-2.5 text-emerald-400 fill-current flex-shrink-0" />
+                        <button
+                          onClick={() => seekTo(kf.t)}
+                          className="font-mono text-xs text-sky-200 tabular-nums flex-shrink-0 hover:text-ember-300"
+                        >
+                          {formatTime(kf.t)}
+                        </button>
+                        <select
+                          value={kf.ease ?? 'smooth'}
+                          onChange={(e) => setKeyframeEasing(kf.t, e.target.value as EasingCurve)}
+                          className="flex-1 min-w-0 h-6 px-1 bg-sky-950 border border-sky-800/50 rounded text-[10px] text-sky-300 focus:outline-none focus:border-ember-500/40"
+                        >
+                          <option value="linear">Linear</option>
+                          <option value="smooth">Smooth</option>
+                          <option value="ease-in">Ease in</option>
+                          <option value="ease-out">Ease out</option>
+                          <option value="hold">Hold</option>
+                        </select>
+                        <button
+                          onClick={() => deleteKeyframe(kf.t)}
+                          className="text-sky-600 hover:text-red-400 flex-shrink-0"
+                          title="Delete keyframe"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {keyframes.length > 0 ? (
+                <button
+                  onClick={clearKeyframes}
+                  className="btn-ghost text-xs w-full justify-center"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear all
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+          </div>
+        </aside>
+      {/* End main workspace */}
+      </div>
 
       {/* Music picker modal */}
       {musicPickerOpen ? (
