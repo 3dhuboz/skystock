@@ -16,7 +16,7 @@ export default function Editor() {
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [phase, setPhase] = useState<Phase>('loading-meta');
   const [errorMsg, setErrorMsg] = useState<string>('');
-  const [preset, setPreset] = useState<PresetName>('orbit');
+  const [preset, setPreset] = useState<PresetName>('static');
   const [lens, setLens] = useState<LensName>('wide');
   const [speed, setSpeed] = useState<number>(1);
   const [duration, setDuration] = useState<number>(0);
@@ -42,7 +42,7 @@ export default function Editor() {
     titlePosition: TitlePosition;
   }
   const DEFAULT_CLIP_SETTINGS: ClipSettings = {
-    preset: 'orbit',
+    preset: 'static',
     lens: 'wide',
     speed: 1,
     color: DEFAULT_COLOR,

@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import {
-  Play, Pause, Volume2, VolumeX,
+  Play, Pause,
   Clock, MapPin, Film,
   HardDrive, Gauge, ShoppingCart, ArrowLeft,
   Shield, CheckCircle2, Infinity as InfinityIcon, Sparkles,
   Wand2, Download, Eye,
 } from 'lucide-react';
+import HeroReframer from '../components/HeroReframer';
 import { getVideo, getPublishedVideos, recordView } from '../lib/api';
 import { formatPrice, formatDuration, formatFileSize, formatDate } from '../lib/types';
 import type { Video } from '../lib/types';
@@ -162,16 +163,14 @@ export default function VideoDetail() {
               }}
             >
               {(video.preview_url || video.watermarked_url) ? (
-                <video
-                  ref={videoRef}
-                  src={(video.preview_url || video.watermarked_url)}
-                  poster={video.thumbnail_url || undefined}
-                  muted={muted}
-                  playsInline
-                  onTimeUpdate={handleTimeUpdate}
-                  onEnded={() => setPlaying(false)}
-                  className="w-full aspect-video object-cover"
-                />
+                <div className="w-full aspect-video relative">
+                  <HeroReframer
+                    src={(video.preview_url || video.watermarked_url) as string}
+                    poster={video.thumbnail_url}
+                    lensCycleSec={8}
+                    showLensLabel={true}
+                  />
+                </div>
               ) : video.thumbnail_url ? (
                 <img
                   src={video.thumbnail_url}

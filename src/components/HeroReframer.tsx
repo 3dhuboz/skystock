@@ -8,7 +8,33 @@ import { createScene, type LensName, type SceneHandle } from '../lib/editor';
  *
  * Falls back to a plain video tag if WebGL fails or the scene can't attach.
  */
-export default function HeroReframer({ src, poster }: { src: string; poster?: string | null }) {
+interface HeroReframerProps {
+  src: string;
+  poster?: string | null;
+  /** Cycle through lenses every N seconds. Set to 0 to stay on Wide. Default 6. */
+  lensCycleSec?: number;
+  /** Show the small "Lens: Wide" chip at the bottom-left. Default true. */
+  showLensLabel?: boolean;
+  /** Autoplay muted by default. */
+  autoplay?: boolean;
+  /** External play/pause control — if undefined, stays playing. */
+  playing?: boolean;
+  /** Class applied to the canvas. */
+  canvasClassName?: string;
+  /** Callback fired when the source video fires timeupdate (for external progress bars). */
+  onTimeUpdate?: (currentTime: number, duration: number) => void;
+}
+
+export default function HeroReframer({
+  src,
+  poster,
+  lensCycleSec = 6,
+  showLensLabel = true,
+  autoplay = true,
+  playing,
+  canvasClassName = 'absolute inset-0 w-full h-full',
+  onTimeUpdate,
+}: HeroReframerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const sceneRef = useRef<SceneHandle | null>(null);
@@ -54,14 +80,12 @@ export default function HeroReframer({ src, poster }: { src: string; poster?: st
         scene.setWatermarkEnabled(false);
         scene.setVideo(video);
         scene.setLens('wide');
-        // Continuous gentle orbit — uses the editor's preset paths so yaw rotates
-        // slowly across the full trim window.
-        scene.setPreset('orbit');
+        // Keep the camera static — we reframe with the lens, no preset motion.
+        // Short clips with Orbit look like wobble; Static looks like a proper camera.
+        scene.setPreset('static');
         scene.setTrim(0, Math.max(4, video.duration || 30));
         sceneRef.current = scene;
 
-        // Cycle lenses every ~6 seconds so visitors see the same clip reframed.
-        const lenses: LensName[] = ['wide', 'fpv', 'asteroid', 'wide', 'ultraWide'];
         const labels: Record<LensName, string> = {
           wide: 'Wide',
           ultraWide: 'Ultra Wide',
@@ -69,20 +93,29 @@ export default function HeroReframer({ src, poster }: { src: string; poster?: st
           asteroid: 'Tiny Planet',
           rabbitHole: 'Sky Tunnel',
         };
-        let idx = 0;
-        scene.setLens(lenses[idx]);
-        setLensLabel(labels[lenses[idx]]);
-        lensCycleTimer = window.setInterval(() => {
-          if (disposed || !sceneRef.current) return;
-          idx = (idx + 1) % lenses.length;
-          sceneRef.current.setLens(lenses[idx]);
+
+        if (lensCycleSec > 0) {
+          const lenses: LensName[] = ['wide', 'fpv', 'asteroid', 'wide', 'ultraWide'];
+          let idx = 0;
+          scene.setLens(lenses[idx]);
           setLensLabel(labels[lenses[idx]]);
-        }, 6000);
+          lensCycleTimer = window.setInterval(() => {
+            if (disposed || !sceneRef.current) return;
+            idx = (idx + 1) % lenses.length;
+            sceneRef.current.setLens(lenses[idx]);
+            setLensLabel(labels[lenses[idx]]);
+          }, lensCycleSec * 1000);
+        } else {
+          scene.setLens('wide');
+          setLensLabel(labels.wide);
+        }
 
         // Start playback (muted autoplay is allowed).
         video.muted = true;
         video.loop = true;
-        try { await video.play(); } catch { /* autoplay policy — stay muted */ }
+        if (autoplay) {
+          try { await video.play(); } catch { /* autoplay policy — stay muted */ }
+        }
 
         // Handle canvas resizes.
         const ro = new ResizeObserver(() => {

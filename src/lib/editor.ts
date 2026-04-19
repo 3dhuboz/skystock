@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 
-export type PresetName = 'orbit' | 'flyThrough' | 'reveal' | 'reverseReveal';
+export type PresetName = 'static' | 'orbit' | 'flyThrough' | 'reveal' | 'reverseReveal';
 
 export const PRESETS: { id: PresetName; label: string; description: string }[] = [
+  { id: 'static',         label: 'Static',         description: 'No motion. The camera holds wherever you drag it.' },
   { id: 'orbit',          label: 'Orbit',          description: 'Smooth 360° rotation around the horizon.' },
   { id: 'flyThrough',     label: 'Fly-through',    description: 'Dynamic yaw + tilt variation. Feels like flight.' },
   { id: 'reveal',         label: 'Reveal',         description: 'Starts tilted down, rises to horizon.' },
@@ -77,6 +78,9 @@ export const LENSES: { id: LensName; label: string; fov: number; pitchBias: numb
  *  (±15-30°) so the framing stays coherent through the shot. */
 export function cameraFor(preset: PresetName, t: number): { yaw: number; pitch: number; roll: number } {
   switch (preset) {
+    case 'static':
+      // No motion at all — camera sits wherever the user dragged it.
+      return { yaw: 0, pitch: 0, roll: 0 };
     case 'orbit':
       // Full 180° yaw sweep back-and-forth around the base, visible but not disorienting.
       return {
@@ -698,7 +702,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   const LENS_IDX: Record<LensName, number> = { fpv: 0, wide: 0, ultraWide: 0, asteroid: 2, rabbitHole: 3 };
 
   let videoEl: HTMLVideoElement | null = null;
-  let preset: PresetName = 'orbit';
+  let preset: PresetName = 'static';
   let lens: LensName = 'wide';
   let raf = 0;
   let yawOffset = 0;
