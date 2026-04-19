@@ -1,6 +1,8 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react';
+import { Loader2 } from 'lucide-react';
 
 // Public pages
 import Layout from './components/Layout';
@@ -9,7 +11,18 @@ import Browse from './pages/Browse';
 import VideoDetail from './pages/VideoDetail';
 import Success from './pages/Success';
 import Download from './pages/Download';
-import Editor from './pages/Editor';
+
+// Editor is ~500KB (Three.js) — only load on /edit/* routes
+const Editor = lazy(() => import('./pages/Editor'));
+
+function EditorFallback() {
+  return (
+    <div className="fixed inset-0 bg-[#0a0e1a] flex items-center justify-center text-sky-400 text-sm">
+      <Loader2 className="w-5 h-5 animate-spin mr-3" />
+      Loading editor…
+    </div>
+  );
+}
 
 // Admin pages
 import AdminLayout from './components/admin/AdminLayout';
@@ -52,9 +65,13 @@ export default function App() {
           <Route path="/download" element={<Download />} />
         </Route>
 
-        {/* Editor — full-screen, no public Layout wrapper */}
-        <Route path="/edit/:id" element={<Editor />} />
-        <Route path="/edit" element={<Editor />} />
+        {/* Editor — full-screen, no public Layout wrapper. Lazy-loaded. */}
+        <Route path="/edit/:id" element={
+          <Suspense fallback={<EditorFallback />}><Editor /></Suspense>
+        } />
+        <Route path="/edit" element={
+          <Suspense fallback={<EditorFallback />}><Editor /></Suspense>
+        } />
 
         {/* Admin routes (auth required) */}
         <Route path="/admin" element={

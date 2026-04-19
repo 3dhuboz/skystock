@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type } from 'lucide-react';
 import { PRESETS, PresetName, LENSES, LensName, Keyframe, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle } from '../lib/editor';
 import { getVideo } from '../lib/api';
 import { Video } from '../lib/types';
@@ -25,6 +25,7 @@ export default function Editor() {
   const [trimOut, setTrimOut] = useState<number>(0);
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const [musicName, setMusicName] = useState<string>('');
+  const [title, setTitle] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'motion' | 'lens' | 'speed' | 'keyframes'>('motion');
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -141,6 +142,11 @@ export default function Editor() {
   useEffect(() => {
     sceneRef.current?.setKeyframes(keyframes);
   }, [keyframes]);
+
+  // Title: fade in over first 3 seconds of the trimmed region
+  useEffect(() => {
+    sceneRef.current?.setTitle(title, trimIn, trimIn + 3);
+  }, [title, trimIn]);
 
   // Watch playhead + enforce loop between trim handles during preview (not during export).
   useEffect(() => {
@@ -326,6 +332,18 @@ export default function Editor() {
           <div className="text-xs text-sky-500 font-mono truncate">
             {PRESETS.find(p => p.id === preset)?.description}
           </div>
+        </div>
+        {/* Title input */}
+        <div className="relative hidden sm:block">
+          <Type className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-sky-500 pointer-events-none" />
+          <input
+            type="text"
+            value={title}
+            onChange={(e) => setTitle(e.target.value.slice(0, 60))}
+            placeholder="Add title card…"
+            maxLength={60}
+            className="pl-8 pr-2 py-1.5 w-[180px] rounded-lg bg-sky-900/40 border border-sky-800/40 text-sm text-sky-200 placeholder-sky-600 focus:outline-none focus:border-ember-500/50 focus:bg-sky-900/60"
+          />
         </div>
         {/* Music chip */}
         {musicName ? (

@@ -95,6 +95,8 @@ export interface SceneHandle {
   getLens(): LensName;
   /** Set trim window (in seconds). The preset's t normalizes over this window. */
   setTrim(inSec: number, outSec: number): void;
+  /** Set a title card. Fades in/out over the given time window. Empty text = no title. */
+  setTitle(text: string, inSec: number, outSec: number): void;
   /** Set the keyframe track. When non-empty, keyframes drive the camera and lens
    *  (preset is ignored). Manual drag still applies as an offset on top. */
   setKeyframes(frames: Keyframe[]): void;
@@ -119,32 +121,37 @@ const FRAG = /* glsl */`
   varying vec2 vUv;
   uniform sampler2D uVideo;
   uniform sampler2D uWm;
+  uniform sampler2D uTitle;
   uniform int uLens;          // 0=wide, 1=ultraWide, 2=asteroid, 3=rabbitHole
+  uniform int uLensB;         // target lens for blending (-1 = no blend)
+  uniform float uBlend;       // 0..1 blend amount between uLens and uLensB
   uniform float uFovRad;      // for wide/ultraWide
+  uniform float uFovRadB;     // for the blend target lens
   uniform float uYaw;
   uniform float uPitch;
   uniform float uRoll;
   uniform float uAspect;      // canvas width/height
   uniform float uZoom;        // 1.0 = default; <1 zooms in, >1 zooms out
+  uniform float uTitleOpacity; // 0..1
   const float PI = 3.14159265358979;
 
-  vec3 rayDir(vec2 uv) {
+  vec3 rayDirFor(int lens, float fovRad, vec2 uv) {
     // Centered screen coords, aspect-correct (x grows with aspect, y in [-1,1]).
     vec2 p = (uv * 2.0 - 1.0) * vec2(uAspect, 1.0);
-    if (uLens == 2) {
+    if (lens == 2) {
       // Asteroid — stereographic from north pole. Center of screen = south pole (ground below).
       p *= 1.3 * uZoom;
       float r2 = dot(p, p);
       return normalize(vec3(2.0 * p.x, r2 - 1.0, -2.0 * p.y));
     }
-    if (uLens == 3) {
+    if (lens == 3) {
       // Rabbit Hole — stereographic from south pole. Center = north pole (sky above).
       p *= 1.3 * uZoom;
       float r2 = dot(p, p);
       return normalize(vec3(2.0 * p.x, 1.0 - r2, -2.0 * p.y));
     }
     // Wide / Ultra Wide — standard pinhole. Zoom adjusts effective FOV.
-    float fovScaled = uFovRad * uZoom;
+    float fovScaled = fovRad * uZoom;
     float f = 1.0 / tan(clamp(fovScaled, 0.1, PI - 0.05) * 0.5);
     return normalize(vec3(p.x, p.y, -f));
   }
@@ -162,17 +169,33 @@ const FRAG = /* glsl */`
   }
 
   void main() {
-    vec3 d = rayDir(vUv);
-    d = rotY(uYaw) * rotX(uPitch) * rotZ(uRoll) * d;
-    vec4 col = sampleEquirect(d);
+    mat3 rot = rotY(uYaw) * rotX(uPitch) * rotZ(uRoll);
+    vec3 dA = rot * rayDirFor(uLens, uFovRad, vUv);
+    vec4 col = sampleEquirect(dA);
+    if (uLensB >= 0 && uBlend > 0.0) {
+      vec3 dB = rot * rayDirFor(uLensB, uFovRadB, vUv);
+      vec4 colB = sampleEquirect(dB);
+      col = mix(col, colB, uBlend);
+    }
 
-    // Watermark: 28% wide × 9% tall, anchored 2% from the bottom-right corner.
-    vec2 wmAnchor = vec2(0.72, 0.03);  // bottom-left of watermark box
+    // Watermark: ~26% wide × 9% tall, anchored 2% from the bottom-right corner.
+    vec2 wmAnchor = vec2(0.72, 0.03);
     vec2 wmSize = vec2(0.26, 0.09);
     vec2 wUv = (vUv - wmAnchor) / wmSize;
     if (wUv.x >= 0.0 && wUv.x <= 1.0 && wUv.y >= 0.0 && wUv.y <= 1.0) {
       vec4 wm = texture2D(uWm, wUv);
       col.rgb = mix(col.rgb, wm.rgb, wm.a * 0.55);
+    }
+
+    // Title card: 80% wide × 20% tall, centered, upper third.
+    if (uTitleOpacity > 0.0) {
+      vec2 ttAnchor = vec2(0.1, 0.66);
+      vec2 ttSize = vec2(0.8, 0.20);
+      vec2 tUv = (vUv - ttAnchor) / ttSize;
+      if (tUv.x >= 0.0 && tUv.x <= 1.0 && tUv.y >= 0.0 && tUv.y <= 1.0) {
+        vec4 tt = texture2D(uTitle, tUv);
+        col.rgb = mix(col.rgb, tt.rgb, tt.a * uTitleOpacity);
+      }
     }
     gl_FragColor = col;
   }
@@ -206,6 +229,39 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   wmTex.magFilter = THREE.LinearFilter;
   wmTex.needsUpdate = true;
 
+  // Title card canvas — redrawn when title text changes.
+  const titleCanvas = document.createElement('canvas');
+  titleCanvas.width = 2048;
+  titleCanvas.height = 512;
+  const titleTex = new THREE.CanvasTexture(titleCanvas);
+  titleTex.colorSpace = THREE.SRGBColorSpace;
+  titleTex.minFilter = THREE.LinearFilter;
+  titleTex.magFilter = THREE.LinearFilter;
+  let titleText = '';
+  let titleIn = 0;
+  let titleOut = 3;
+  function repaintTitle() {
+    const ctx = titleCanvas.getContext('2d')!;
+    ctx.clearRect(0, 0, titleCanvas.width, titleCanvas.height);
+    if (!titleText) return;
+    ctx.font = '700 156px "Outfit", system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const cx = titleCanvas.width / 2;
+    const cy = titleCanvas.height / 2;
+    ctx.shadowColor = 'rgba(0,0,0,0.85)';
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = 'white';
+    ctx.fillText(titleText, cx, cy);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(249,115,22,0.9)';
+    ctx.lineWidth = 4;
+    const w = ctx.measureText(titleText).width;
+    const y = cy + 95;
+    ctx.beginPath(); ctx.moveTo(cx - w / 2 - 40, y); ctx.lineTo(cx + w / 2 + 40, y); ctx.stroke();
+    titleTex.needsUpdate = true;
+  }
+
   // Empty placeholder video texture; swapped in setVideo().
   const blankCanvas = document.createElement('canvas');
   blankCanvas.width = 2; blankCanvas.height = 2;
@@ -221,19 +277,26 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     depthTest: false,
     depthWrite: false,
     uniforms: {
-      uVideo:  { value: videoTex },
-      uWm:     { value: wmTex },
-      uLens:   { value: 0 },
-      uFovRad: { value: (75 * Math.PI) / 180 },
-      uYaw:    { value: 0 },
-      uPitch:  { value: 0 },
-      uRoll:   { value: 0 },
-      uAspect: { value: 16 / 9 },
-      uZoom:   { value: 1.0 },
+      uVideo:         { value: videoTex },
+      uWm:            { value: wmTex },
+      uTitle:         { value: titleTex },
+      uLens:          { value: 0 },
+      uLensB:         { value: -1 },
+      uBlend:         { value: 0 },
+      uFovRad:        { value: (75 * Math.PI) / 180 },
+      uFovRadB:       { value: (75 * Math.PI) / 180 },
+      uYaw:           { value: 0 },
+      uPitch:         { value: 0 },
+      uRoll:          { value: 0 },
+      uAspect:        { value: 16 / 9 },
+      uZoom:          { value: 1.0 },
+      uTitleOpacity:  { value: 0 },
     },
   });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
   scene.add(quad);
+
+  const LENS_IDX: Record<LensName, number> = { wide: 0, ultraWide: 1, asteroid: 2, rabbitHole: 3 };
 
   let videoEl: HTMLVideoElement | null = null;
   let preset: PresetName = 'orbit';
@@ -306,16 +369,33 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       let roll = 0;
       let baseZoom: number;
       let effectiveLens: LensName;
+      let lensB: LensName | null = null;
+      let lensBlend = 0;
 
       const kf = evalKeyframes(keyframes, videoEl.currentTime);
       if (kf) {
-        // Keyframes override the preset path.
         baseYaw = kf.yaw;
         basePitch = kf.pitch;
         baseZoom = kf.zoom;
         effectiveLens = kf.lens;
+
+        // Work out whether we're mid-transition between two keyframes with different lenses.
+        const sorted = keyframes.slice().sort((a, b) => a.t - b.t);
+        let i = 0;
+        while (i < sorted.length - 1 && sorted[i + 1].t <= videoEl.currentTime) i++;
+        if (i < sorted.length - 1) {
+          const a = sorted[i];
+          const b = sorted[i + 1];
+          if (a.lens !== b.lens) {
+            const k = (videoEl.currentTime - a.t) / Math.max(0.0001, b.t - a.t);
+            // Smooth S-curve for the blend — feels less jarring than linear.
+            const sk = k * k * (3 - 2 * k);
+            effectiveLens = a.lens;
+            lensB = b.lens;
+            lensBlend = Math.max(0, Math.min(1, sk));
+          }
+        }
       } else {
-        // Preset-driven — t normalized to trim window.
         const outSec = trimOut === Infinity ? videoEl.duration : Math.min(trimOut, videoEl.duration);
         const win = Math.max(0.01, outSec - trimIn);
         const tp = Math.min(1, Math.max(0, (videoEl.currentTime - trimIn) / win));
@@ -328,9 +408,18 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       }
 
       const lensDef = LENSES.find(l => l.id === effectiveLens)!;
-      const lensIdx = ['wide', 'ultraWide', 'asteroid', 'rabbitHole'].indexOf(effectiveLens);
+      const lensIdx = LENS_IDX[effectiveLens];
       material.uniforms.uLens.value = lensIdx;
       material.uniforms.uFovRad.value = (lensDef.fov * Math.PI) / 180;
+      if (lensB !== null) {
+        const lensBDef = LENSES.find(l => l.id === lensB)!;
+        material.uniforms.uLensB.value = LENS_IDX[lensB];
+        material.uniforms.uFovRadB.value = (lensBDef.fov * Math.PI) / 180;
+        material.uniforms.uBlend.value = lensBlend;
+      } else {
+        material.uniforms.uLensB.value = -1;
+        material.uniforms.uBlend.value = 0;
+      }
       material.uniforms.uZoom.value = baseZoom * zoom;
 
       const pitchBias = lensIdx >= 2 ? 0 : lensDef.pitchBias;
@@ -341,17 +430,31 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       material.uniforms.uPitch.value = finalPitch;
       material.uniforms.uRoll.value = roll;
 
+      // Title opacity: fade in over 0.3s, hold, fade out over 0.3s.
+      if (titleText && videoEl.currentTime >= titleIn && videoEl.currentTime <= titleOut) {
+        const span = Math.max(0.01, titleOut - titleIn);
+        const fadePart = Math.min(0.3, span * 0.25);
+        const intoTitle = videoEl.currentTime - titleIn;
+        const outOfTitle = titleOut - videoEl.currentTime;
+        const fadeIn = Math.min(1, intoTitle / fadePart);
+        const fadeOut = Math.min(1, outOfTitle / fadePart);
+        material.uniforms.uTitleOpacity.value = Math.max(0, Math.min(1, Math.min(fadeIn, fadeOut)));
+      } else {
+        material.uniforms.uTitleOpacity.value = 0;
+      }
+
       lastBaseYaw = baseYaw;
       lastBasePitch = basePitch;
       lastBaseZoom = baseZoom;
       lastBaseLens = effectiveLens;
     } else {
-      // Pre-video: just render whatever the static lens is.
       const lensDef = LENSES.find(l => l.id === lens)!;
-      const lensIdx = ['wide', 'ultraWide', 'asteroid', 'rabbitHole'].indexOf(lens);
-      material.uniforms.uLens.value = lensIdx;
+      material.uniforms.uLens.value = LENS_IDX[lens];
+      material.uniforms.uLensB.value = -1;
+      material.uniforms.uBlend.value = 0;
       material.uniforms.uFovRad.value = (lensDef.fov * Math.PI) / 180;
       material.uniforms.uZoom.value = zoom;
+      material.uniforms.uTitleOpacity.value = 0;
     }
     renderer.render(scene, camera);
   }
@@ -373,6 +476,12 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     setLens(l) { lens = l; },
     getLens() { return lens; },
     setTrim(inSec, outSec) { trimIn = Math.max(0, inSec); trimOut = outSec; },
+    setTitle(text, inSec, outSec) {
+      titleText = text;
+      titleIn = Math.max(0, inSec);
+      titleOut = Math.max(titleIn + 0.2, outSec);
+      repaintTitle();
+    },
     setKeyframes(frames) { keyframes = frames.slice().sort((a, b) => a.t - b.t); },
     captureState() {
       return {
@@ -395,6 +504,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       material.dispose();
       quad.geometry.dispose();
       wmTex.dispose();
+      titleTex.dispose();
       if (videoTex && 'dispose' in videoTex) videoTex.dispose();
     },
   };
