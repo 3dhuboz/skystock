@@ -108,7 +108,10 @@ export default function Home() {
                   <div className="mt-1 font-display font-semibold text-lg text-white drop-shadow-lg">{heroLocation}</div>
                 </div>
                 {/* watermark badge */}
-                <div className="absolute bottom-4 right-4 z-10 pointer-events-none text-[11px] font-mono text-white/40">skystock.pages.dev</div>
+                {/* Clip counter chip — replaces the watermark that was colliding with the Reset button */}
+                <div className="absolute top-5 right-5 z-10 pointer-events-none text-[10px] font-mono text-white/50 tracking-[0.18em] uppercase">
+                  Live · demo
+                </div>
                 {/* Gradient vignette so HUD reads clean over bright footage */}
                 {heroClipUrl && (
                   <div className="absolute inset-0 pointer-events-none z-[5]"
