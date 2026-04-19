@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Palette, Monitor, Smartphone, Square, LayoutDashboard } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Palette, Monitor, Smartphone, Square, LayoutDashboard, Plus } from 'lucide-react';
 import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, DashboardConfig, DashboardWidgetId, DEFAULT_DASHBOARD, DASHBOARD_WIDGETS, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle, computeAutoColor, STOCK_MUSIC, StockTrack } from '../lib/editor';
 import { getVideo } from '../lib/api';
 import { Video } from '../lib/types';
@@ -26,6 +26,10 @@ export default function Editor() {
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const [musicName, setMusicName] = useState<string>('');
   const [musicPickerOpen, setMusicPickerOpen] = useState<boolean>(false);
+
+  interface ClipEntry { id: string; name: string; url: string; trimIn: number; trimOut: number }
+  const [clips, setClips] = useState<ClipEntry[]>([]);
+  const [activeClipId, setActiveClipId] = useState<string>('');
   const [title, setTitle] = useState<string>('');
   const [titleDuration, setTitleDuration] = useState<number>(3);
   const [titlePosition, setTitlePosition] = useState<TitlePosition>('center');
@@ -155,6 +159,63 @@ export default function Editor() {
   useEffect(() => {
     sceneRef.current?.setTrim(trimIn, trimOut);
   }, [trimIn, trimOut]);
+
+  // When a new sourceUrl is set (via file picker, ?src=, or clip metadata), register it as a clip.
+  useEffect(() => {
+    if (!sourceUrl) return;
+    setClips(prev => {
+      if (prev.some(c => c.url === sourceUrl)) return prev;
+      const name = (() => {
+        if (sourceUrl.startsWith('blob:')) return `Clip ${prev.length + 1}`;
+        try { return decodeURIComponent(new URL(sourceUrl, window.location.href).pathname.split('/').pop() || 'Clip'); }
+        catch { return `Clip ${prev.length + 1}`; }
+      })();
+      const id = crypto.randomUUID?.() ?? Math.random().toString(36).slice(2);
+      const clip: ClipEntry = { id, name, url: sourceUrl, trimIn: 0, trimOut: 0 };
+      setActiveClipId(id);
+      return [...prev, clip];
+    });
+  }, [sourceUrl]);
+
+  // When trim changes, persist into the active clip entry.
+  useEffect(() => {
+    if (!activeClipId) return;
+    setClips(prev => prev.map(c => c.id === activeClipId ? { ...c, trimIn, trimOut } : c));
+  }, [trimIn, trimOut, activeClipId]);
+
+  const addClipFile = useCallback((file: File) => {
+    const url = URL.createObjectURL(file);
+    setSourceUrl(url);
+    setPhase('loading-video');
+  }, []);
+
+  const switchClip = useCallback((id: string) => {
+    const c = clips.find(x => x.id === id);
+    if (!c) return;
+    setActiveClipId(id);
+    setSourceUrl(c.url);
+    setPhase('loading-video');
+    setTrimIn(c.trimIn);
+    setTrimOut(c.trimOut);
+  }, [clips]);
+
+  const removeClip = useCallback((id: string) => {
+    setClips(prev => {
+      const next = prev.filter(c => c.id !== id);
+      if (activeClipId === id && next.length > 0) {
+        const nextActive = next[0];
+        setActiveClipId(nextActive.id);
+        setSourceUrl(nextActive.url);
+        setPhase('loading-video');
+        setTrimIn(nextActive.trimIn);
+        setTrimOut(nextActive.trimOut);
+      } else if (next.length === 0) {
+        setActiveClipId('');
+        setSourceUrl(null);
+      }
+      return next;
+    });
+  }, [activeClipId]);
 
   // Push keyframes to the scene
   useEffect(() => {
@@ -455,6 +516,51 @@ export default function Editor() {
           Export {ASPECT_DIMS[aspect].label}
         </button>
       </header>
+
+      {/* Clip tab bar (multi-clip workspace) */}
+      {clips.length > 0 ? (
+        <div className="flex items-stretch border-b border-sky-800/30 bg-sky-950/20 flex-shrink-0 overflow-x-auto">
+          {clips.map(c => {
+            const active = c.id === activeClipId;
+            return (
+              <div
+                key={c.id}
+                className={
+                  'flex items-center gap-2 px-3 h-9 border-r border-sky-800/30 flex-shrink-0 cursor-pointer transition-colors ' +
+                  (active ? 'bg-sky-900/60 text-sky-100' : 'text-sky-500 hover:bg-sky-900/30')
+                }
+                onClick={() => switchClip(c.id)}
+              >
+                <Film className={'w-3.5 h-3.5 flex-shrink-0 ' + (active ? 'text-ember-400' : '')} />
+                <span className="text-xs max-w-[160px] truncate">{c.name}</span>
+                {clips.length > 1 ? (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); removeClip(c.id); }}
+                    className="opacity-50 hover:opacity-100 flex-shrink-0"
+                    title="Remove clip"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+          <label className="flex items-center gap-1.5 px-3 h-9 cursor-pointer text-sky-500 hover:bg-sky-900/40 text-xs flex-shrink-0">
+            <Plus className="w-3.5 h-3.5" />
+            Add clip
+            <input
+              type="file"
+              accept="video/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) addClipFile(f);
+                e.target.value = '';
+              }}
+            />
+          </label>
+        </div>
+      ) : null}
 
       {/* Main workspace: left icons | center preview+timeline+transport | right property sidebar */}
       <div className="flex-1 flex min-h-0">
