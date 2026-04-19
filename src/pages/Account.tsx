@@ -30,29 +30,40 @@ interface Purchase {
   download_token?: string;
 }
 
-const DEMO_EDITS: Edit[] = [
-  { id: 'e1', clip_title: 'Sunrise Over The Gemfields', clip_id: '1', created_at: '2026-04-18', duration_seconds: 18, status: 'draft' },
-  { id: 'e2', clip_title: 'Reef Coastline Rush', clip_id: '2', created_at: '2026-04-12', duration_seconds: 30, status: 'paid', price_cents: 499 },
-  { id: 'e3', clip_title: 'Cane Fields at Dusk', clip_id: '3', created_at: '2026-04-05', duration_seconds: 24, status: 'exported' },
-];
-
-const DEMO_PURCHASES: Purchase[] = [
-  { id: 'p1', kind: 'raw', clip_title: 'Sunrise Over The Gemfields', price_cents: 3999, created_at: '2026-04-18', download_token: 'tok_abc123' },
-  { id: 'p2', kind: 'clean-edit', clip_title: 'Reef Coastline Rush', price_cents: 499, created_at: '2026-04-12' },
-];
-
 export default function Account() {
   const { user, isLoaded } = useUser();
   const { isAdmin } = useIsAdmin();
   const [tab, setTab] = useState<'edits' | 'purchases'>('edits');
   const [edits, setEdits] = useState<Edit[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [loadingData, setLoadingData] = useState(false);
 
   useEffect(() => {
-    // TODO wire up real API when user has edits/purchases tables
-    setEdits(DEMO_EDITS);
-    setPurchases(DEMO_PURCHASES);
-  }, []);
+    // Fetch real orders for the signed-in user's email. No demo data — if they
+    // haven't bought anything yet, the page correctly reports zeros and empty
+    // states rather than seeded "Sunrise Over The Gemfields" trickery.
+    const email = user?.emailAddresses?.[0]?.emailAddress;
+    if (!email) return;
+    let cancelled = false;
+    setLoadingData(true);
+    (async () => {
+      try {
+        const res = await fetch(`/api/me/orders?email=${encodeURIComponent(email)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as { purchases: Purchase[] };
+        if (cancelled) return;
+        setPurchases(Array.isArray(data.purchases) ? data.purchases : []);
+      } catch {
+        if (!cancelled) setPurchases([]);
+      } finally {
+        if (!cancelled) setLoadingData(false);
+      }
+    })();
+    // Edits (browser-side drafts) will live in an IndexedDB / user-scoped table
+    // later; leave empty for now rather than faking.
+    setEdits([]);
+    return () => { cancelled = true; };
+  }, [user]);
 
   if (!isLoaded) {
     return (

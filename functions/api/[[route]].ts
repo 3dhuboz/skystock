@@ -309,6 +309,41 @@ app.post('/videos/:id/view', async (c) => {
   return c.json({ ok: true });
 });
 
+// Orders for the current visitor — looked up by buyer_email. The Account page
+// uses this to show "My Purchases" without needing admin auth. Rate-limiting
+// or session-gating can be added later; for now, knowing an email is enough.
+app.get('/me/orders', async (c) => {
+  const email = (c.req.query('email') || '').trim().toLowerCase();
+  if (!email || !email.includes('@')) return c.json({ purchases: [] });
+
+  const rows = await c.env.DB.prepare(
+    `SELECT o.id, o.video_id, o.amount_cents, o.currency, o.status,
+            o.created_at, o.completed_at,
+            v.title as video_title,
+            t.token as download_token
+       FROM orders o
+       LEFT JOIN videos v ON v.id = o.video_id
+       LEFT JOIN download_tokens t ON t.order_id = o.id AND t.expires_at > datetime('now')
+      WHERE LOWER(o.buyer_email) = ?
+      ORDER BY o.created_at DESC
+      LIMIT 100`
+  ).bind(email).all();
+
+  const purchases = (rows.results || []).map((r: any) => ({
+    id: r.id,
+    kind: 'raw' as const,
+    clip_title: r.video_title || r.video_id,
+    clip_id: r.video_id,
+    price_cents: r.amount_cents,
+    currency: r.currency,
+    status: r.status,
+    created_at: r.created_at,
+    download_token: r.download_token || undefined,
+  }));
+
+  return c.json({ purchases });
+});
+
 // ============================
 // PUBLIC: MEDIA (R2 proxy)
 // ============================
