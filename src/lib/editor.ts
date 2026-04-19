@@ -69,33 +69,40 @@ export const LENSES: { id: LensName; label: string; fov: number; pitchBias: numb
   { id: 'rabbitHole', label: 'Rabbit Hole', fov: 170, pitchBias:  Math.PI / 2 - 0.05, description: 'Looking straight up through a sky tunnel. Inverse asteroid.' },
 ];
 
-function clamp(n: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, n)); }
-
-/** Returns camera Euler angles for the given preset at normalized time t ∈ [0,1]. */
+/** Returns camera Euler deltas for the given preset at normalized time t ∈ [0,1].
+ *
+ *  These deltas are ADDED on top of the user's drag-set framing in the render loop, so the user's
+ *  chosen "starting angle" is preserved and the preset becomes a subtle motion layered on top —
+ *  matching DJI Mimo's feel, where presets don't override your reframing. Amplitudes are small
+ *  (±15-30°) so the framing stays coherent through the shot. */
 export function cameraFor(preset: PresetName, t: number): { yaw: number; pitch: number; roll: number } {
   switch (preset) {
     case 'orbit':
+      // Slow ±30° sway around the user's chosen yaw, with a subtle pitch wobble.
       return {
-        yaw: t * Math.PI * 2,
-        pitch: Math.sin(t * Math.PI * 2) * 0.12,
+        yaw: Math.sin(t * Math.PI * 2) * 0.52,
+        pitch: Math.sin(t * Math.PI * 4) * 0.06,
         roll: 0,
       };
     case 'flyThrough':
+      // Dynamic, handheld feel — bigger yaw + pitch wobble + slight roll.
       return {
-        yaw: t * Math.PI * 1.5 + Math.sin(t * 6) * 0.25,
-        pitch: Math.sin(t * Math.PI * 4) * 0.22,
-        roll: Math.sin(t * Math.PI * 3) * 0.08,
+        yaw: Math.sin(t * Math.PI * 3) * 0.35 + Math.sin(t * 9) * 0.08,
+        pitch: Math.sin(t * Math.PI * 4.5) * 0.18,
+        roll: Math.sin(t * Math.PI * 2.5) * 0.06,
       };
     case 'reveal':
+      // Start tilted down (-0.45) and lift to the user's base over the clip.
       return {
-        yaw: t * Math.PI * 0.6,
-        pitch: clamp(-0.6 + t * 0.75, -0.6, 0.15),
+        yaw: (t - 0.5) * 0.3,
+        pitch: -0.45 * (1 - t * t),
         roll: 0,
       };
     case 'reverseReveal':
+      // Start at the user's base and drift down + slightly away.
       return {
-        yaw: -t * Math.PI * 0.6,
-        pitch: clamp(0.15 - t * 0.75, -0.6, 0.15),
+        yaw: -(t * 0.3),
+        pitch: -0.45 * (t * t),
         roll: 0,
       };
   }
@@ -113,6 +120,26 @@ export interface ColorAdjust {
 }
 
 export const DEFAULT_COLOR: ColorAdjust = { exposure: 0, contrast: 1, saturation: 1, temperature: 0, dLogM: false };
+
+export interface StockTrack {
+  id: string;
+  title: string;
+  mood: string;
+  url: string;
+  /** Optional attribution — shown in UI when the track is in use. */
+  attribution?: string;
+}
+
+/** Starter library using SoundHelix's public royalty-free tracks. Swap these URLs for your own
+ *  curated library (Pixabay Audio CDN, FMA, self-hosted) once you have licensing sorted. */
+export const STOCK_MUSIC: StockTrack[] = [
+  { id: 'sh1',  title: 'Skyline',        mood: 'Cinematic',     url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3',  attribution: 'SoundHelix' },
+  { id: 'sh5',  title: 'Afterglow',      mood: 'Uplifting',     url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-5.mp3',  attribution: 'SoundHelix' },
+  { id: 'sh8',  title: 'Wanderer',       mood: 'Chill',         url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-8.mp3',  attribution: 'SoundHelix' },
+  { id: 'sh11', title: 'Signal Tower',   mood: 'Electronic',    url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-11.mp3', attribution: 'SoundHelix' },
+  { id: 'sh13', title: 'High Altitude',  mood: 'Driving',       url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-13.mp3', attribution: 'SoundHelix' },
+  { id: 'sh16', title: 'Horizon Line',   mood: 'Ambient',       url: 'https://www.soundhelix.com/examples/mp3/SoundHelix-Song-16.mp3', attribution: 'SoundHelix' },
+];
 
 /** Sample the given video element and derive auto color settings. Runs on a 64x32 scratch canvas
  *  so it's cheap enough to call live. Returns neutral settings if the video isn't ready. */

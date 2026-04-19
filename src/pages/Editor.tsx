@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Palette, Monitor, Smartphone, Square } from 'lucide-react';
-import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle, computeAutoColor } from '../lib/editor';
+import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle, computeAutoColor, STOCK_MUSIC, StockTrack } from '../lib/editor';
 import { getVideo } from '../lib/api';
 import { Video } from '../lib/types';
 
@@ -25,6 +25,7 @@ export default function Editor() {
   const [trimOut, setTrimOut] = useState<number>(0);
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const [musicName, setMusicName] = useState<string>('');
+  const [musicPickerOpen, setMusicPickerOpen] = useState<boolean>(false);
   const [title, setTitle] = useState<string>('');
   const [titleDuration, setTitleDuration] = useState<number>(3);
   const [titlePosition, setTitlePosition] = useState<TitlePosition>('center');
@@ -306,19 +307,18 @@ export default function Editor() {
 
   const clearKeyframes = useCallback(() => setKeyframes([]), []);
 
-  const loadMusic = useCallback((file: File) => {
+  const loadMusicFromUrl = useCallback((url: string, displayName: string) => {
     // Clean up any previous audio
     audioElRef.current?.pause();
     if (audioElRef.current) audioElRef.current.src = '';
     audioCtxRef.current?.close().catch(() => {});
 
-    const url = URL.createObjectURL(file);
     const audio = new Audio(url);
     audio.crossOrigin = 'anonymous';
     audio.loop = true;
     audio.preload = 'auto';
     audioElRef.current = audio;
-    setMusicName(file.name);
+    setMusicName(displayName);
 
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     const src = ctx.createMediaElementSource(audio);
@@ -331,6 +331,15 @@ export default function Editor() {
     const v = videoElRef.current;
     if (v && !v.paused) audio.play().catch(() => {});
   }, []);
+
+  const loadMusic = useCallback((file: File) => {
+    loadMusicFromUrl(URL.createObjectURL(file), file.name);
+  }, [loadMusicFromUrl]);
+
+  const pickStockTrack = useCallback((t: StockTrack) => {
+    loadMusicFromUrl(t.url, `${t.title} — ${t.mood}`);
+    setMusicPickerOpen(false);
+  }, [loadMusicFromUrl]);
 
   const removeMusic = useCallback(() => {
     audioElRef.current?.pause();
@@ -381,20 +390,13 @@ export default function Editor() {
             </button>
           </div>
         ) : (
-          <label className="btn-ghost text-xs cursor-pointer">
+          <button
+            onClick={() => setMusicPickerOpen(true)}
+            className="btn-ghost text-xs"
+          >
             <Music className="w-4 h-4" />
             Add music
-            <input
-              type="file"
-              accept="audio/*"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) loadMusic(f);
-                e.target.value = '';
-              }}
-            />
-          </label>
+          </button>
         )}
         <button
           onClick={handleExport}
@@ -814,6 +816,66 @@ export default function Editor() {
           ) : null}
         </div>
       </footer>
+
+      {/* Music picker modal */}
+      {musicPickerOpen ? (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setMusicPickerOpen(false)}>
+          <div
+            className="bg-sky-950 border border-sky-800/50 rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-3 border-b border-sky-800/50">
+              <div className="flex items-center gap-2">
+                <Music className="w-4 h-4 text-ember-400" />
+                <h3 className="font-display font-semibold text-sm text-white">Add music</h3>
+              </div>
+              <button onClick={() => setMusicPickerOpen(false)} className="text-sky-500 hover:text-sky-200">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="overflow-y-auto flex-1">
+              <div className="px-5 py-2 text-[10px] font-mono uppercase tracking-wider text-sky-500">
+                Stock library
+              </div>
+              {STOCK_MUSIC.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => pickStockTrack(t)}
+                  className="w-full flex items-center gap-3 px-5 py-3 hover:bg-sky-900/40 text-left transition-colors border-b border-sky-800/20"
+                >
+                  <div className="w-8 h-8 rounded-md bg-gradient-to-br from-sky-500/30 to-ember-500/20 flex items-center justify-center flex-shrink-0">
+                    <Music className="w-4 h-4 text-sky-300" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-sky-100 truncate">{t.title}</div>
+                    <div className="text-[11px] text-sky-500 truncate">{t.mood}{t.attribution ? ` · ${t.attribution}` : ''}</div>
+                  </div>
+                  <span className="text-[10px] font-mono text-sky-600 flex-shrink-0">Use →</span>
+                </button>
+              ))}
+            </div>
+            <div className="px-5 py-3 border-t border-sky-800/50 flex items-center justify-between">
+              <label className="btn-ghost text-xs cursor-pointer">
+                <Upload className="w-3.5 h-3.5" />
+                Upload your own
+                <input
+                  type="file"
+                  accept="audio/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) { loadMusic(f); setMusicPickerOpen(false); }
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+              <div className="text-[11px] text-sky-600 font-mono">
+                Plays through preview · bakes into export
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
