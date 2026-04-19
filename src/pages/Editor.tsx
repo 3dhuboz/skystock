@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2 } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X } from 'lucide-react';
 import { PRESETS, PresetName, LENSES, LensName, Keyframe, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle } from '../lib/editor';
 import { getVideo } from '../lib/api';
 import { Video } from '../lib/types';
@@ -24,6 +24,11 @@ export default function Editor() {
   const [trimIn, setTrimIn] = useState<number>(0);
   const [trimOut, setTrimOut] = useState<number>(0);
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
+  const [musicName, setMusicName] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'motion' | 'lens' | 'speed' | 'keyframes'>('motion');
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const audioDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const playheadRafRef = useRef<number>(0);
   const [playing, setPlaying] = useState(false);
   const [exportBytes, setExportBytes] = useState(0);
@@ -145,8 +150,10 @@ export default function Editor() {
         setPlayhead(v.currentTime);
         if (phase === 'ready' && v.loop && v.currentTime >= trimOut && trimOut > trimIn) {
           v.currentTime = trimIn;
+          if (audioElRef.current) audioElRef.current.currentTime = 0;
         } else if (phase === 'ready' && v.currentTime < trimIn - 0.1) {
           v.currentTime = trimIn;
+          if (audioElRef.current) audioElRef.current.currentTime = 0;
         }
       }
       playheadRafRef.current = requestAnimationFrame(tick);
@@ -183,10 +190,21 @@ export default function Editor() {
 
     v.loop = false;
     v.currentTime = trimIn;
+    // Restart music from top so it aligns with the export's first frame
+    if (audioElRef.current) {
+      audioElRef.current.currentTime = 0;
+      await audioElRef.current.play().catch(() => {});
+    }
     await v.play();
     setPlaying(true);
 
     const stream = scene.captureStream(30);
+    // Mix in the music audio track if loaded
+    if (audioDestRef.current) {
+      for (const track of audioDestRef.current.stream.getAudioTracks()) {
+        stream.addTrack(track);
+      }
+    }
     const handle = startExport(stream, mime, (bytes) => {
       setExportBytes(bytes);
       setExportElapsed(performance.now() - exportStartRef.current);
@@ -248,6 +266,50 @@ export default function Editor() {
 
   const clearKeyframes = useCallback(() => setKeyframes([]), []);
 
+  const loadMusic = useCallback((file: File) => {
+    // Clean up any previous audio
+    audioElRef.current?.pause();
+    if (audioElRef.current) audioElRef.current.src = '';
+    audioCtxRef.current?.close().catch(() => {});
+
+    const url = URL.createObjectURL(file);
+    const audio = new Audio(url);
+    audio.crossOrigin = 'anonymous';
+    audio.loop = true;
+    audio.preload = 'auto';
+    audioElRef.current = audio;
+    setMusicName(file.name);
+
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const src = ctx.createMediaElementSource(audio);
+    const dest = ctx.createMediaStreamDestination();
+    src.connect(ctx.destination);  // speakers (preview)
+    src.connect(dest);              // export stream
+    audioCtxRef.current = ctx;
+    audioDestRef.current = dest;
+
+    const v = videoElRef.current;
+    if (v && !v.paused) audio.play().catch(() => {});
+  }, []);
+
+  const removeMusic = useCallback(() => {
+    audioElRef.current?.pause();
+    if (audioElRef.current) audioElRef.current.src = '';
+    audioCtxRef.current?.close().catch(() => {});
+    audioElRef.current = null;
+    audioCtxRef.current = null;
+    audioDestRef.current = null;
+    setMusicName('');
+  }, []);
+
+  // Keep music playback in sync with video play/pause state
+  useEffect(() => {
+    const audio = audioElRef.current;
+    if (!audio) return;
+    if (playing) audio.play().catch(() => {});
+    else audio.pause();
+  }, [playing]);
+
   const trimDuration = Math.max(0, trimOut - trimIn);
 
   return (
@@ -265,6 +327,35 @@ export default function Editor() {
             {PRESETS.find(p => p.id === preset)?.description}
           </div>
         </div>
+        {/* Music chip */}
+        {musicName ? (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-medium max-w-[240px]">
+            <Music className="w-3.5 h-3.5 flex-shrink-0" />
+            <span className="truncate">{musicName}</span>
+            <button
+              onClick={removeMusic}
+              className="opacity-60 hover:opacity-100 flex-shrink-0"
+              title="Remove music"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        ) : (
+          <label className="btn-ghost text-xs cursor-pointer">
+            <Music className="w-4 h-4" />
+            Add music
+            <input
+              type="file"
+              accept="audio/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) loadMusic(f);
+                e.target.value = '';
+              }}
+            />
+          </label>
+        )}
         <div className="text-xs text-sky-600 font-mono hidden lg:block">
           Preview fits screen · export = 1920×1080
         </div>
@@ -369,137 +460,174 @@ export default function Editor() {
         />
       ) : null}
 
-      {/* Footer: two rows — motion presets + lens presets */}
-      <footer className="px-6 py-3 border-t border-sky-800/30 flex-shrink-0 space-y-2">
-        {/* Row 1: motion presets */}
-        <div className="flex items-center gap-3 overflow-x-auto">
-          <button
-            onClick={togglePlay}
-            disabled={phase !== 'ready'}
-            className="btn-ghost text-xs flex-shrink-0 disabled:opacity-40"
-          >
-            {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-            {playing ? 'Pause' : 'Play'}
-          </button>
-          <div className="w-px h-8 bg-sky-800/40 flex-shrink-0" />
-          <div className="text-xs text-sky-500 uppercase font-mono flex-shrink-0 pr-2 flex items-center gap-1.5 w-32">
-            <Wand2 className="w-3.5 h-3.5" />
-            Motion
-          </div>
-          {PRESETS.map(p => (
-            <button
-              key={p.id}
-              onClick={() => setPreset(p.id)}
-              disabled={phase !== 'ready'}
-              className={
-                'px-4 py-2 rounded-lg text-sm font-medium transition-all flex-shrink-0 ' +
-                (preset === p.id
-                  ? 'bg-ember-500/20 text-ember-400 border border-ember-500/40'
-                  : 'bg-sky-900/30 text-sky-300 border border-sky-800/30 hover:bg-sky-800/40')
-              }
-            >
-              {p.label}
-            </button>
-          ))}
-          <div className="w-px h-8 bg-sky-800/40 flex-shrink-0" />
-          <button
-            onClick={() => sceneRef.current?.resetFrame()}
-            disabled={phase !== 'ready'}
-            className="btn-ghost text-xs flex-shrink-0 disabled:opacity-40"
-            title="Reset to the preset's default angle"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            Reset frame
-          </button>
+      {/* Transport bar */}
+      <div className="px-6 py-2 border-t border-sky-800/30 flex items-center gap-4 flex-shrink-0 text-xs">
+        <button
+          onClick={togglePlay}
+          disabled={phase !== 'ready'}
+          className="btn-ghost text-xs flex-shrink-0 disabled:opacity-40"
+        >
+          {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          {playing ? 'Pause' : 'Play'}
+        </button>
+        <div className="font-mono text-sky-400 tabular-nums w-32">
+          {formatTime(playhead)} <span className="text-sky-700">/</span> {formatTime(duration)}
         </div>
-        {/* Row 2: lens presets */}
-        <div className="flex items-center gap-3 overflow-x-auto">
-          <div className="text-xs text-sky-500 uppercase font-mono flex-shrink-0 pr-2 flex items-center gap-1.5 w-32 pl-[72px]">
-            <Aperture className="w-3.5 h-3.5" />
-            Lens
-          </div>
-          {LENSES.map(l => (
-            <button
-              key={l.id}
-              onClick={() => setLens(l.id)}
-              disabled={phase !== 'ready'}
-              title={l.description}
-              className={
-                'px-4 py-2 rounded-lg text-sm font-medium transition-all flex-shrink-0 ' +
-                (lens === l.id
-                  ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                  : 'bg-sky-900/30 text-sky-400 border border-sky-800/30 hover:bg-sky-800/40')
-              }
-            >
-              {l.label}
-            </button>
-          ))}
-          <div className="flex-1" />
-          <div className="text-xs text-sky-600 font-mono hidden md:block flex-shrink-0">
-            Drag to reframe · scroll to zoom
-          </div>
+        <button
+          onClick={() => sceneRef.current?.resetFrame()}
+          disabled={phase !== 'ready'}
+          className="btn-ghost text-xs flex-shrink-0 disabled:opacity-40"
+          title="Reset drag + zoom to the preset's default framing"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          Reset frame
+        </button>
+        <div className="flex-1" />
+        <div className="text-sky-600 font-mono hidden md:block">
+          Drag to reframe · scroll to zoom
         </div>
-        {/* Row 3: speed */}
-        <div className="flex items-center gap-3 overflow-x-auto">
-          <div className="text-xs text-sky-500 uppercase font-mono flex-shrink-0 pr-2 flex items-center gap-1.5 w-32 pl-[72px]">
-            <Gauge className="w-3.5 h-3.5" />
-            Speed
-          </div>
-          {[0.25, 0.5, 1, 2, 4].map(s => (
-            <button
-              key={s}
-              onClick={() => setSpeed(s)}
-              disabled={phase !== 'ready'}
-              className={
-                'px-4 py-2 rounded-lg text-sm font-medium transition-all flex-shrink-0 min-w-[72px] ' +
-                (speed === s
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                  : 'bg-sky-900/30 text-sky-400 border border-sky-800/30 hover:bg-sky-800/40')
-              }
-            >
-              {s === 1 ? '1× Normal' : s < 1 ? `${s}× Slow` : `${s}× Fast`}
-            </button>
-          ))}
-          <div className="flex-1" />
-          <div className="text-xs text-sky-600 font-mono hidden md:block flex-shrink-0">
-            Speed bakes into the export
-          </div>
+      </div>
+
+      {/* Tabbed tool panel */}
+      <footer className="border-t border-sky-800/30 flex-shrink-0 bg-sky-950/30">
+        {/* Tab strip */}
+        <div className="flex px-4 border-b border-sky-800/30">
+          {([
+            { id: 'motion',    label: 'Motion',    icon: Wand2 },
+            { id: 'lens',      label: 'Lens',      icon: Aperture },
+            { id: 'speed',     label: 'Speed',     icon: Gauge },
+            { id: 'keyframes', label: 'Keyframes', icon: Diamond },
+          ] as const).map(t => {
+            const active = activeTab === t.id;
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setActiveTab(t.id)}
+                className={
+                  'px-4 py-2.5 text-xs font-medium uppercase tracking-wider flex items-center gap-2 transition-colors border-b-2 -mb-px ' +
+                  (active
+                    ? 'text-ember-400 border-ember-500'
+                    : 'text-sky-500 border-transparent hover:text-sky-300')
+                }
+              >
+                <Icon className="w-3.5 h-3.5" />
+                {t.label}
+                {t.id === 'keyframes' && keyframes.length > 0 ? (
+                  <span className="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-ember-500/30 text-ember-300">
+                    {keyframes.length}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
-        {/* Row 4: keyframes */}
-        <div className="flex items-center gap-3 overflow-x-auto">
-          <div className="text-xs text-sky-500 uppercase font-mono flex-shrink-0 pr-2 flex items-center gap-1.5 w-32 pl-[72px]">
-            <Diamond className="w-3.5 h-3.5" />
-            Keyframes
-          </div>
-          <button
-            onClick={addKeyframe}
-            disabled={phase !== 'ready'}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all flex-shrink-0 bg-ember-500/20 text-ember-300 border border-ember-500/40 hover:bg-ember-500/30 disabled:opacity-40"
-            title="Capture current frame (angle + zoom + lens) at the playhead. Overrides the motion preset."
-          >
-            <Diamond className="w-3.5 h-3.5 fill-current" />
-            Add @ {formatTime(playhead)}
-          </button>
-          {keyframes.length > 0 ? (
-            <button
-              onClick={clearKeyframes}
-              disabled={phase !== 'ready'}
-              className="btn-ghost text-xs flex-shrink-0 disabled:opacity-40"
-              title="Remove all keyframes — the motion preset takes over again."
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Clear all
-            </button>
+
+        {/* Tab content */}
+        <div className="px-6 py-3 h-14 flex items-center gap-3 overflow-x-auto">
+          {activeTab === 'motion' ? (
+            <>
+              {PRESETS.map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => setPreset(p.id)}
+                  disabled={phase !== 'ready'}
+                  title={p.description}
+                  className={
+                    'px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex-shrink-0 ' +
+                    (preset === p.id
+                      ? 'bg-ember-500/20 text-ember-300 border border-ember-500/40'
+                      : 'bg-sky-900/30 text-sky-300 border border-sky-800/30 hover:bg-sky-800/40')
+                  }
+                >
+                  {p.label}
+                </button>
+              ))}
+              <div className="flex-1" />
+              <div className="text-[11px] text-sky-600 font-mono truncate">
+                {PRESETS.find(p => p.id === preset)?.description}
+              </div>
+            </>
           ) : null}
-          <div className="text-xs text-sky-500 font-mono flex-shrink-0">
-            {keyframes.length === 0
-              ? 'No keyframes — preset drives the camera'
-              : `${keyframes.length} keyframe${keyframes.length === 1 ? '' : 's'} override the preset`}
-          </div>
-          <div className="flex-1" />
-          <div className="text-xs text-sky-600 font-mono hidden md:block flex-shrink-0">
-            Shift-click a diamond to delete
-          </div>
+
+          {activeTab === 'lens' ? (
+            <>
+              {LENSES.map(l => (
+                <button
+                  key={l.id}
+                  onClick={() => setLens(l.id)}
+                  disabled={phase !== 'ready'}
+                  title={l.description}
+                  className={
+                    'px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex-shrink-0 ' +
+                    (lens === l.id
+                      ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                      : 'bg-sky-900/30 text-sky-400 border border-sky-800/30 hover:bg-sky-800/40')
+                  }
+                >
+                  {l.label}
+                </button>
+              ))}
+              <div className="flex-1" />
+              <div className="text-[11px] text-sky-600 font-mono truncate">
+                {LENSES.find(l => l.id === lens)?.description}
+              </div>
+            </>
+          ) : null}
+
+          {activeTab === 'speed' ? (
+            <>
+              {[0.25, 0.5, 1, 2, 4].map(s => (
+                <button
+                  key={s}
+                  onClick={() => setSpeed(s)}
+                  disabled={phase !== 'ready'}
+                  className={
+                    'px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all flex-shrink-0 font-mono ' +
+                    (speed === s
+                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                      : 'bg-sky-900/30 text-sky-400 border border-sky-800/30 hover:bg-sky-800/40')
+                  }
+                >
+                  {s}×
+                </button>
+              ))}
+              <div className="flex-1" />
+              <div className="text-[11px] text-sky-600 font-mono">
+                {speed === 1 ? 'Real-time' : speed < 1 ? 'Slow-motion' : 'Hyperlapse'} · bakes into export
+              </div>
+            </>
+          ) : null}
+
+          {activeTab === 'keyframes' ? (
+            <>
+              <button
+                onClick={addKeyframe}
+                disabled={phase !== 'ready'}
+                className="px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex-shrink-0 bg-ember-500/20 text-ember-300 border border-ember-500/40 hover:bg-ember-500/30 disabled:opacity-40"
+                title="Capture current frame (angle + zoom + lens) at the playhead"
+              >
+                <Diamond className="w-3.5 h-3.5 fill-current" />
+                Add @ {formatTime(playhead)}
+              </button>
+              {keyframes.length > 0 ? (
+                <button
+                  onClick={clearKeyframes}
+                  disabled={phase !== 'ready'}
+                  className="btn-ghost text-xs flex-shrink-0 disabled:opacity-40"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Clear
+                </button>
+              ) : null}
+              <div className="flex-1" />
+              <div className="text-[11px] text-sky-600 font-mono truncate">
+                {keyframes.length === 0
+                  ? 'No keyframes — preset drives the camera · Shift-click a diamond to delete'
+                  : `${keyframes.length} keyframe${keyframes.length === 1 ? '' : 's'} · preset overridden · Shift-click to delete`}
+              </div>
+            </>
+          ) : null}
         </div>
       </footer>
     </div>
