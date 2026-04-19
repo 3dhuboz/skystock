@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type } from 'lucide-react';
+import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Monitor, Smartphone, Square } from 'lucide-react';
 import { PRESETS, PresetName, LENSES, LensName, Keyframe, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle } from '../lib/editor';
 import { getVideo } from '../lib/api';
 import { Video } from '../lib/types';
@@ -478,38 +478,29 @@ export default function Editor() {
         />
       ) : null}
 
-      {/* Transport bar */}
-      <div className="px-6 py-2 border-t border-sky-800/30 flex items-center gap-4 flex-shrink-0 text-xs">
-        <button
-          onClick={togglePlay}
-          disabled={phase !== 'ready'}
-          className="btn-ghost text-xs flex-shrink-0 disabled:opacity-40"
-        >
-          {playing ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-          {playing ? 'Pause' : 'Play'}
-        </button>
-        <div className="font-mono text-sky-400 tabular-nums w-32">
-          {formatTime(playhead)} <span className="text-sky-700">/</span> {formatTime(duration)}
-        </div>
-        <button
-          onClick={() => sceneRef.current?.resetFrame()}
-          disabled={phase !== 'ready'}
-          className="btn-ghost text-xs flex-shrink-0 disabled:opacity-40"
-          title="Reset drag + zoom to the preset's default framing"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          Reset frame
-        </button>
-        <div className="flex-1" />
-        <div className="text-sky-600 font-mono hidden md:block">
-          Drag to reframe · scroll to zoom
-        </div>
-      </div>
-
-      {/* Tabbed tool panel */}
+      {/* Unified toolbar: transport + tabs in one row */}
       <footer className="border-t border-sky-800/30 flex-shrink-0 bg-sky-950/30">
-        {/* Tab strip */}
-        <div className="flex px-4 border-b border-sky-800/30">
+        <div className="px-4 h-11 flex items-center gap-2 border-b border-sky-800/30">
+          <button
+            onClick={togglePlay}
+            disabled={phase !== 'ready'}
+            className="flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center hover:bg-sky-800/40 disabled:opacity-40 transition-colors"
+            title={playing ? 'Pause' : 'Play'}
+          >
+            {playing ? <Pause className="w-4 h-4 text-sky-200" /> : <Play className="w-4 h-4 text-sky-200" />}
+          </button>
+          <div className="font-mono text-xs text-sky-400 tabular-nums w-14 flex-shrink-0">
+            {formatTime(playhead)}
+          </div>
+          <button
+            onClick={() => sceneRef.current?.resetFrame()}
+            disabled={phase !== 'ready'}
+            className="flex-shrink-0 w-8 h-8 rounded-md flex items-center justify-center hover:bg-sky-800/40 disabled:opacity-40 transition-colors"
+            title="Reset drag + zoom to the preset's default"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-sky-300" />
+          </button>
+          <div className="w-px h-5 bg-sky-800/50 mx-1 flex-shrink-0" />
           {([
             { id: 'motion',    label: 'Motion',    icon: Wand2 },
             { id: 'lens',      label: 'Lens',      icon: Aperture },
@@ -523,16 +514,16 @@ export default function Editor() {
                 key={t.id}
                 onClick={() => setActiveTab(t.id)}
                 className={
-                  'px-4 py-2.5 text-xs font-medium uppercase tracking-wider flex items-center gap-2 transition-colors border-b-2 -mb-px ' +
+                  'px-3 h-8 text-xs font-medium uppercase tracking-wider flex items-center gap-1.5 rounded-md transition-colors ' +
                   (active
-                    ? 'text-ember-400 border-ember-500'
-                    : 'text-sky-500 border-transparent hover:text-sky-300')
+                    ? 'text-ember-300 bg-ember-500/10'
+                    : 'text-sky-500 hover:text-sky-300 hover:bg-sky-800/30')
                 }
               >
                 <Icon className="w-3.5 h-3.5" />
                 {t.label}
                 {t.id === 'keyframes' && keyframes.length > 0 ? (
-                  <span className="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-ember-500/30 text-ember-300">
+                  <span className="ml-0.5 px-1.5 py-0.5 text-[10px] leading-none rounded bg-ember-500/30 text-ember-200">
                     {keyframes.length}
                   </span>
                 ) : null}
@@ -542,7 +533,7 @@ export default function Editor() {
         </div>
 
         {/* Tab content */}
-        <div className="px-6 py-3 h-14 flex items-center gap-3 overflow-x-auto">
+        <div className="px-4 h-12 flex items-center gap-2 overflow-x-auto">
           {activeTab === 'motion' ? (
             <>
               {PRESETS.map(p => (
@@ -708,19 +699,17 @@ function Timeline({ duration, playhead, trimIn, trimOut, keyframes, disabled, on
   const trimLen = Math.max(0, trimOut - trimIn);
 
   return (
-    <div className="px-6 py-3 border-t border-sky-800/30 bg-sky-950/40 flex-shrink-0">
-      <div className="flex items-center gap-3 text-xs font-mono mb-2">
-        <span className="text-sky-500 w-16">{formatTime(playhead)}</span>
-        <div className="flex-1" />
-        <span className="text-sky-500 uppercase text-[10px] tracking-wider">
-          Trim: {formatTime(trimLen)} of {formatTime(duration)}
+    <div className="px-4 pt-2 pb-2 border-t border-sky-800/30 bg-sky-950/40 flex-shrink-0">
+      <div className="relative mb-1.5 h-3">
+        <span className="absolute left-0 text-[10px] font-mono text-sky-700 tabular-nums">0:00</span>
+        <span className="absolute left-1/2 -translate-x-1/2 text-[10px] font-mono text-sky-700 uppercase tracking-wider">
+          {formatTime(trimLen)} clip
         </span>
-        <div className="flex-1" />
-        <span className="text-sky-500 w-16 text-right">{formatTime(duration)}</span>
+        <span className="absolute right-0 text-[10px] font-mono text-sky-700 tabular-nums">{formatTime(duration)}</span>
       </div>
       <div
         ref={trackRef}
-        className="relative h-10 bg-sky-900/50 rounded-lg select-none cursor-pointer"
+        className="relative h-8 bg-sky-900/50 rounded-md select-none cursor-pointer"
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
