@@ -294,6 +294,28 @@ export default function Editor() {
     setKeyframes(prev => prev.map(k => k.t === t ? { ...k, ease } : k));
   }, []);
 
+  // Shift-click anywhere on the viewport → add a tracking keyframe aimed at the clicked point.
+  const handleCanvasShiftClick = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!e.shiftKey) return;
+    const s = sceneRef.current;
+    const v = videoElRef.current;
+    if (!s || !v || phase !== 'ready') return;
+    e.preventDefault();
+    e.stopPropagation();
+    const r = e.currentTarget.getBoundingClientRect();
+    const u = (e.clientX - r.left) / r.width;
+    const vN = (e.clientY - r.top) / r.height;
+    const aim = s.aimAt([u, vN]);
+    if (!aim) return;
+    const st = s.captureState();
+    const newKf: Keyframe = { t: v.currentTime, yaw: aim.yaw, pitch: aim.pitch, zoom: st.zoom, lens: st.lens, ease: defaultEasing };
+    setKeyframes(prev => {
+      const filtered = prev.filter(k => Math.abs(k.t - newKf.t) > 0.2);
+      return [...filtered, newKf].sort((a, b) => a.t - b.t);
+    });
+    s.resetFrame();
+  }, [phase, defaultEasing]);
+
   const deleteKeyframe = useCallback((t: number) => {
     setKeyframes(prev => prev.filter(k => k.t !== t));
   }, []);
@@ -415,6 +437,7 @@ export default function Editor() {
           ref={canvasRef}
           className="max-w-full max-h-full"
           style={{ aspectRatio: aspect.replace(':', ' / ') }}
+          onPointerDown={handleCanvasShiftClick}
         />
 
         {phase === 'loading-meta' || phase === 'loading-video' ? (
@@ -699,8 +722,8 @@ export default function Editor() {
               <div className="flex-1" />
               <div className="text-[11px] text-sky-600 font-mono truncate">
                 {keyframes.length === 0
-                  ? 'No keyframes — preset drives the camera · Shift-click a diamond to delete'
-                  : `${keyframes.length} keyframe${keyframes.length === 1 ? '' : 's'} · preset overridden · Shift-click to delete`}
+                  ? 'Shift-click the viewport to track a subject · Shift-click a diamond to delete'
+                  : `${keyframes.length} keyframe${keyframes.length === 1 ? '' : 's'} · Shift-click viewport to track · Shift-click diamond to delete`}
               </div>
             </>
           ) : null}

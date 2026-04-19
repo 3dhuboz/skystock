@@ -200,6 +200,10 @@ export interface SceneHandle {
    *  the preset / keyframe interpolation AND the user's manual drag offsets.
    *  Use this to snapshot a keyframe. */
   captureState(): { yaw: number; pitch: number; zoom: number; lens: LensName };
+  /** Compute the yaw/pitch needed to center the given canvas UV in the frame.
+   *  uv is (x,y) with origin at the top-left, 0..1. Returns null for stereographic
+   *  lenses where "aim" doesn't have a natural meaning. */
+  aimAt(uv: [number, number]): { yaw: number; pitch: number } | null;
   /** Resize the WebGL render target (output resolution). */
   setOutputSize(width: number, height: number): void;
   /** Reset user's manual drag offsets back to the pure preset path. */
@@ -440,6 +444,10 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   let lastBasePitch = 0;
   let lastBaseZoom = 1.0;
   let lastBaseLens: LensName = 'wide';
+  // FPV banking: track yaw velocity so we can bank the camera into turns.
+  let prevYaw = 0;
+  let bankRoll = 0;
+  let prevFrameTime = 0;
   const PITCH_LIMIT = Math.PI / 2 - 0.05;
   const ZOOM_MIN = 0.3;
   const ZOOM_MAX = 3.0;
@@ -450,6 +458,8 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   let lastY = 0;
   canvas.style.cursor = 'grab';
   canvas.addEventListener('pointerdown', (e) => {
+    // Shift-click is reserved for Editor.tsx (aim-at-subject). Don't start a drag.
+    if (e.shiftKey) return;
     dragging = true;
     lastX = e.clientX;
     lastY = e.clientY;
@@ -551,11 +561,27 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
 
       const pitchBias = lensIdx >= 2 ? 0 : lensDef.pitchBias;
       let finalPitch = basePitch + pitchOffset + pitchBias;
+      // FPV lens: nose the camera down slightly like goggles, and bank into turns.
+      let finalRoll = roll;
+      if (effectiveLens === 'fpv') {
+        finalPitch -= 0.13;  // ~7.5° forward tilt
+        const now = performance.now() / 1000;
+        const dt = Math.max(0.016, Math.min(0.1, prevFrameTime ? (now - prevFrameTime) : 0.016));
+        const yawVel = ((baseYaw + yawOffset) - prevYaw) / dt;
+        // Exponential smoothing on roll for a gentle feel; cap ±25° bank.
+        const targetRoll = Math.max(-0.44, Math.min(0.44, yawVel * 0.35));
+        bankRoll = bankRoll + (targetRoll - bankRoll) * 0.12;
+        finalRoll = roll + bankRoll;
+        prevFrameTime = now;
+      } else {
+        bankRoll = 0;
+      }
+      prevYaw = baseYaw + yawOffset;
       if (finalPitch > PITCH_LIMIT) finalPitch = PITCH_LIMIT;
       if (finalPitch < -PITCH_LIMIT) finalPitch = -PITCH_LIMIT;
       material.uniforms.uYaw.value = baseYaw + yawOffset;
       material.uniforms.uPitch.value = finalPitch;
-      material.uniforms.uRoll.value = roll;
+      material.uniforms.uRoll.value = finalRoll;
 
       // Title opacity: fade in over 0.3s, hold, fade out over 0.3s.
       if (titleText && videoEl.currentTime >= titleIn && videoEl.currentTime <= titleOut) {
@@ -635,6 +661,37 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
         zoom:  lastBaseZoom * zoom,
         lens:  lastBaseLens,
       };
+    },
+    aimAt(uv) {
+      // Only meaningful for perspective (pinhole) lenses; stereographic returns null.
+      const lensIdx = LENS_IDX[lastBaseLens];
+      if (lensIdx !== 0) return null;
+      const lensDef = LENSES.find(l => l.id === lastBaseLens)!;
+      const fovRad = (lensDef.fov * Math.PI) / 180;
+      const aspect = material.uniforms.uAspect.value as number;
+      const effectiveZoom = lastBaseZoom * zoom;
+      const f = 1 / Math.tan(Math.max(0.1, fovRad * effectiveZoom) * 0.5);
+      // Screen-space point (flip y so up is positive, matching uv convention in shader).
+      const px = (uv[0] * 2 - 1) * aspect;
+      const py = (1 - uv[1]) * 2 - 1;  // input uv has origin top-left; GL uv has origin bottom-left
+      // Camera-local ray direction.
+      let dx = px, dy = py, dz = -f;
+      const len = Math.hypot(dx, dy, dz);
+      dx /= len; dy /= len; dz /= len;
+      // Apply current rotation (YXZ: rotate around X by pitch, then Y by yaw; roll ~ 0 ignored).
+      const curState = handle.captureState();
+      const cx = Math.cos(curState.pitch), sx = Math.sin(curState.pitch);
+      const ly = dy * cx - dz * sx;
+      const lz = dy * sx + dz * cx;
+      dy = ly; dz = lz;
+      const cy = Math.cos(curState.yaw), sy = Math.sin(curState.yaw);
+      const wx = dx * cy + dz * sy;
+      const wz = -dx * sy + dz * cy;
+      dx = wx; dz = wz;
+      // World direction → target angles that would put this direction at screen center.
+      const newYaw = Math.atan2(dx, -dz);
+      const newPitch = Math.asin(Math.max(-1, Math.min(1, dy)));
+      return { yaw: newYaw, pitch: newPitch };
     },
     setOutputSize(w, h) {
       renderer.setSize(w, h, false);
