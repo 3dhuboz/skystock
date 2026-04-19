@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Trash2, Upload, Check, X, Loader2, Image as ImageIcon, Film, RefreshCw } from 'lucide-react';
-import { getAdminVideo, updateVideo, deleteVideo, uploadVideoFile } from '../../lib/api';
+import { ArrowLeft, Save, Trash2, Upload, Check, X, Loader2, Image as ImageIcon, Film, RefreshCw, Wrench } from 'lucide-react';
+import { getAdminVideo, updateVideo, deleteVideo, uploadVideoFile, repairVideo } from '../../lib/api';
 import type { Video } from '../../lib/types';
 import toast from 'react-hot-toast';
 
@@ -25,6 +25,7 @@ export default function AdminEditVideo() {
   });
   const [uploadPct, setUploadPct] = useState<Record<SlotType, number>>({ preview: 0, thumbnail: 0 });
   const [uploadingSlot, setUploadingSlot] = useState<SlotType | null>(null);
+  const [repairing, setRepairing] = useState(false);
 
   const reload = async () => {
     if (!id) return;
@@ -95,6 +96,29 @@ export default function AdminEditVideo() {
     }
   }
 
+  async function handleRepair() {
+    if (!id) return;
+    setRepairing(true);
+    const t = toast.loading('Scanning R2 for orphaned uploads…');
+    try {
+      const res = await repairVideo(id);
+      const found = Object.entries(res.report).filter(([, v]) => v.found && !v.skipped).map(([k]) => k);
+      const missing = Object.entries(res.report).filter(([, v]) => !v.found).map(([k]) => k);
+      if (found.length) {
+        toast.success(`Re-linked: ${found.join(', ')}`, { id: t });
+      } else if (missing.length) {
+        toast(`Nothing to repair · missing in R2: ${missing.join(', ')}`, { id: t, icon: 'ℹ️' });
+      } else {
+        toast.success('All files already linked', { id: t });
+      }
+      await reload();
+    } catch (e: any) {
+      toast.error(e?.message || 'Repair failed', { id: t });
+    } finally {
+      setRepairing(false);
+    }
+  }
+
   async function handleDelete() {
     if (!confirm('Are you sure you want to archive this video? It will no longer be available for purchase.')) return;
     try {
@@ -121,9 +145,21 @@ export default function AdminEditVideo() {
 
       {/* Media slots — fix missing thumbnail/preview without losing the metadata */}
       <div className="glass-card p-6 mb-6">
-        <div className="flex items-center gap-2 mb-4">
-          <h2 className="font-display font-semibold text-white">Media files</h2>
-          <span className="text-[10px] font-mono text-sky-500 uppercase tracking-wider">· Re-upload to fix</span>
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <div className="flex items-center gap-2">
+            <h2 className="font-display font-semibold text-white">Media files</h2>
+            <span className="text-[10px] font-mono text-sky-500 uppercase tracking-wider">· Re-upload to fix</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleRepair}
+            disabled={repairing}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-display font-medium text-ember-300 border border-ember-400/40 bg-ember-500/10 hover:bg-ember-500/20 transition-colors disabled:opacity-40"
+            title="Scan R2 for files that uploaded but never got linked to this video"
+          >
+            {repairing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wrench className="w-3.5 h-3.5" />}
+            {repairing ? 'Scanning…' : 'Auto-repair from R2'}
+          </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

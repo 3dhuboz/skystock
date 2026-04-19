@@ -878,6 +878,50 @@ app.post('/admin/videos/:id/upload-url', async (c) => {
   return c.json({ uploadUrl: signed.url, key, contentType: ct });
 });
 
+// Repair — when an upload landed in R2 but confirm-upload never ran (e.g. the auth bug
+// that sent every /admin/* request through with no Bearer), the file is still there at
+// a predictable key. This endpoint scans for orphans and re-links them to the DB row.
+app.post('/admin/videos/:id/repair', async (c) => {
+  const videoId = c.req.param('id');
+  const video = await c.env.DB.prepare('SELECT * FROM videos WHERE id = ?').bind(videoId).first() as any;
+  if (!video) return c.json({ message: 'Not found' }, 404);
+
+  const report: Record<string, { found: boolean; key?: string; size?: number; skipped?: string }> = {};
+  const candidates: { type: 'original' | 'preview' | 'thumbnail'; column: string; extensions: string[] }[] = [
+    { type: 'original',  column: 'original_key',  extensions: ['mp4', 'mov', 'MP4', 'MOV', 'webm'] },
+    { type: 'preview',   column: 'preview_key',   extensions: ['mp4', 'webm', 'mov'] },
+    { type: 'thumbnail', column: 'thumbnail_key', extensions: ['jpg', 'jpeg', 'png', 'webp'] },
+  ];
+
+  for (const c0 of candidates) {
+    // If the DB already has a key, leave it alone (no point clobbering).
+    if (video[c0.column]) {
+      report[c0.type] = { found: true, key: video[c0.column], skipped: 'already set' };
+      continue;
+    }
+    let found: { key: string; size: number } | null = null;
+    for (const ext of c0.extensions) {
+      const key = `videos/${videoId}/${c0.type}.${ext}`;
+      try {
+        const head = await c.env.R2.head(key);
+        if (head) { found = { key, size: head.size }; break; }
+      } catch { /* noop, try next */ }
+    }
+    if (!found) {
+      report[c0.type] = { found: false };
+      continue;
+    }
+    await c.env.DB.prepare(`UPDATE videos SET ${c0.column} = ?, updated_at = datetime('now') WHERE id = ?`)
+      .bind(found.key, videoId).run();
+    if (c0.type === 'original') {
+      await c.env.DB.prepare('UPDATE videos SET file_size_bytes = ? WHERE id = ?').bind(found.size, videoId).run();
+    }
+    report[c0.type] = { found: true, key: found.key, size: found.size };
+  }
+
+  return c.json({ videoId, report });
+});
+
 app.post('/admin/videos/:id/confirm-upload', async (c) => {
   const { type, key } = await c.req.json();
   const videoId = c.req.param('id');

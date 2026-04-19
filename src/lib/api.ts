@@ -146,6 +146,13 @@ export async function toggleFeatured(id: string): Promise<Video> {
   return request(`/admin/videos/${id}/feature`, { method: 'POST' });
 }
 
+export async function repairVideo(id: string): Promise<{
+  videoId: string;
+  report: Record<string, { found: boolean; key?: string; size?: number; skipped?: string }>;
+}> {
+  return request(`/admin/videos/${id}/repair`, { method: 'POST' });
+}
+
 export async function uploadVideoFile(
   videoId: string,
   file: File,
