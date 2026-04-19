@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Palette, Monitor, Smartphone, Square, Plus, Volume2, VolumeX } from 'lucide-react';
-import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle, computeAutoColor, STOCK_MUSIC, StockTrack, COLOR_PRESETS, applyColorPreset, ColorPreset } from '../lib/editor';
+import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle, computeAutoColor, STOCK_MUSIC, StockTrack, COLOR_PRESETS, applyColorPreset, ColorPreset, DashboardConfig, DEFAULT_DASHBOARD } from '../lib/editor';
 import { getVideo, getAdminVideo } from '../lib/api';
 import { Video } from '../lib/types';
 
@@ -19,6 +19,8 @@ export default function Editor() {
   const [preset, setPreset] = useState<PresetName>('static');
   const [presetIntensity, setPresetIntensity] = useState<number>(1); // 0.25..2
   const [lens, setLens] = useState<LensName>('wide');
+  // DJI-style telemetry/dashboard overlay — date + elapsed timer + altitude widgets
+  const [dashboard, setDashboard] = useState<DashboardConfig>(DEFAULT_DASHBOARD);
   const [speed, setSpeed] = useState<number>(1);
   // DJI-style stabilisation toggles — RockSteady dampens motion, Horizon Leveling
   // locks horizon to world-up. Hooked to the scene as cosmetic state for now; full
@@ -196,6 +198,10 @@ export default function Editor() {
   useEffect(() => {
     sceneRef.current?.setPresetIntensity(presetIntensity);
   }, [presetIntensity]);
+
+  useEffect(() => {
+    sceneRef.current?.setDashboard(dashboard);
+  }, [dashboard]);
 
   // Apply lens changes to scene
   useEffect(() => {
@@ -1150,6 +1156,65 @@ export default function Editor() {
                     <span className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${horizonLevel ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
                   </span>
                 </label>
+              </div>
+
+              {/* Dashboard / telemetry overlay — date + elapsed timer baked into the export */}
+              <div className="rounded-lg border border-sky-800/40 bg-sky-950/40 p-3 space-y-2.5">
+                <label className="flex items-center justify-between cursor-pointer">
+                  <span className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Telemetry HUD</span>
+                  <span
+                    className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${dashboard.enabled ? 'bg-ember-500' : 'bg-sky-800'}`}
+                    onClick={() => setDashboard(d => ({ ...d, enabled: !d.enabled }))}
+                  >
+                    <span className={`inline-block h-3 w-3 rounded-full bg-white transition-transform ${dashboard.enabled ? 'translate-x-3.5' : 'translate-x-0.5'}`} />
+                  </span>
+                </label>
+                {dashboard.enabled && (
+                  <>
+                    <div>
+                      <div className="text-[9px] font-mono uppercase text-sky-600 tracking-wider mb-1">Corner</div>
+                      <div className="grid grid-cols-4 gap-1">
+                        {(['tl', 'tr', 'bl', 'br'] as const).map(pos => (
+                          <button
+                            key={pos}
+                            onClick={() => setDashboard(d => ({ ...d, position: pos }))}
+                            className={`py-1 rounded text-[10px] font-mono uppercase tracking-wider transition-colors ${
+                              dashboard.position === pos
+                                ? 'bg-ember-500/25 border border-ember-400/50 text-ember-200'
+                                : 'bg-sky-900/40 border border-sky-800/40 text-sky-400 hover:text-white'
+                            }`}
+                          >
+                            {pos}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-mono uppercase text-sky-600 tracking-wider mb-1">Widgets</div>
+                      <div className="flex flex-wrap gap-1">
+                        {(['date', 'timer', 'speed', 'altitude'] as const).map(w => {
+                          const active = dashboard.widgets.includes(w);
+                          return (
+                            <button
+                              key={w}
+                              onClick={() => setDashboard(d => ({
+                                ...d,
+                                widgets: active ? d.widgets.filter(x => x !== w) : [...d.widgets, w],
+                              }))}
+                              className={`px-2 py-1 rounded-full text-[10px] font-mono uppercase tracking-wider transition-colors ${
+                                active
+                                  ? 'bg-ember-500/25 border border-ember-400/50 text-ember-200'
+                                  : 'bg-sky-900/40 border border-sky-800/40 text-sky-400 hover:text-white'
+                              }`}
+                            >
+                              {w}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
               </div>
 
               {/* Lens tile grid — visual thumbnails with gradient per projection */}
