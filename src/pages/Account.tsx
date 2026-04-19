@@ -265,6 +265,22 @@ export default function Account() {
             <Mail className="w-3.5 h-3.5" />
             Need help? Receipts and download links are also emailed to {user?.emailAddresses?.[0]?.emailAddress || 'your inbox'}.
           </div>
+          {user?.id && (
+            <div className="mt-3 pt-3 border-t border-sky-700/20 flex items-center justify-center gap-2 text-[11px] font-mono text-sky-600">
+              <span>Clerk user ID:</span>
+              <code className="px-2 py-0.5 rounded bg-sky-950/60 border border-sky-700/30 text-sky-300 select-all">{user.id}</code>
+              <button
+                onClick={() => navigator.clipboard.writeText(user.id)}
+                className="text-ember-400 hover:text-ember-300"
+                title="Copy"
+              >
+                copy
+              </button>
+              <span className={isAdmin ? 'text-emerald-400' : 'text-sky-500'}>
+                {isAdmin ? '· admin ✓' : '· not in admin allow-list'}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>
