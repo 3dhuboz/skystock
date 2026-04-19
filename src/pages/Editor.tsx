@@ -574,8 +574,22 @@ export default function Editor() {
           <ArrowLeft className="w-4 h-4" /> Back
         </Link>
         <div className="flex-1 min-w-0">
-          <div className="font-display font-semibold text-sm truncate">
+          <div className="font-display font-semibold text-sm truncate flex items-center gap-2">
             {video?.title || (srcOverride ? 'Editor (dev preview)' : 'Editor')}
+            {video && (
+              <span
+                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-mono uppercase tracking-wider"
+                style={{
+                  background: 'rgba(245,158,11,0.12)',
+                  border: '1px solid rgba(245,158,11,0.4)',
+                  color: '#fbbf24',
+                }}
+                title="You are editing the low-quality watermarked preview. Purchase the raw 360° master for clean 4K/60 export."
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                Low-res preview
+              </span>
+            )}
           </div>
           <div className="text-xs text-sky-500 font-mono truncate">
             {PRESETS.find(p => p.id === preset)?.description}
@@ -707,6 +721,22 @@ export default function Editor() {
               style={{ aspectRatio: aspect.replace(':', ' / ') }}
               onPointerDown={handleCanvasShiftClick}
             />
+
+            {/* Corner badge on the preview itself — unmistakable low-res notice */}
+            {phase === 'ready' && video && (
+              <div
+                className="absolute top-3 left-3 z-10 pointer-events-none flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md"
+                style={{
+                  background: 'rgba(10,14,26,0.75)',
+                  border: '1px solid rgba(245,158,11,0.45)',
+                }}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-[10px] font-display font-semibold text-amber-200 uppercase tracking-[0.18em]">
+                  Low-res preview · clean 4K with purchase
+                </span>
+              </div>
+            )}
 
             {phase === 'loading-meta' || phase === 'loading-video' ? (
               <div className="absolute inset-0 flex items-center justify-center text-sky-400 text-sm">

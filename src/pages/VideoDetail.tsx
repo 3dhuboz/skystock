@@ -234,11 +234,25 @@ export default function VideoDetail() {
                 </div>
               )}
 
-              {/* Bottom-right watermark label. HeroReframer handles playback; no hover controls needed. */}
+              {/* Low-res preview badge — top-left, unmistakable. Clean 4K is the paid product. */}
               {(video.preview_url || video.watermarked_url) && (
-                <div className="absolute bottom-3 right-3 z-[5] pointer-events-none text-[10px] font-mono text-white/60 uppercase tracking-wider">
-                  Preview · Watermarked · {formatDuration(video.duration_seconds)}
-                </div>
+                <>
+                  <div
+                    className="absolute top-4 left-4 z-[5] pointer-events-none flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md"
+                    style={{
+                      background: 'rgba(10,14,26,0.75)',
+                      border: '1px solid rgba(245,158,11,0.45)',
+                    }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    <span className="text-[10px] font-display font-semibold text-amber-200 uppercase tracking-[0.18em]">
+                      Low-res preview · clean 4K with purchase
+                    </span>
+                  </div>
+                  <div className="absolute bottom-3 right-3 z-[5] pointer-events-none text-[10px] font-mono text-white/60 uppercase tracking-wider">
+                    Watermarked · {formatDuration(video.duration_seconds)}
+                  </div>
+                </>
               )}
             </div>
 
