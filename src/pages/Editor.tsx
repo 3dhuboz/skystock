@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Palette, Monitor, Smartphone, Square, Plus, Volume2, VolumeX } from 'lucide-react';
 import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle, computeAutoColor, STOCK_MUSIC, StockTrack } from '../lib/editor';
-import { getVideo } from '../lib/api';
+import { getVideo, getAdminVideo } from '../lib/api';
 import { Video } from '../lib/types';
 
 type Phase = 'loading-meta' | 'loading-video' | 'ready' | 'exporting' | 'done' | 'error';
@@ -119,11 +119,19 @@ export default function Editor() {
     }
     (async () => {
       try {
-        const v = await getVideo(id);
+        // Admins: fetch via the admin endpoint so we can load the full-quality
+        // original for editing instead of the low-res preview. Falls back
+        // cleanly to the public endpoint if the admin call 401s.
+        let v: Video | null = null;
+        const clerk = (window as any).Clerk;
+        const isSignedIn = !!clerk?.session;
+        if (isSignedIn) {
+          try { v = await getAdminVideo(id); } catch { /* fall through to public */ }
+        }
+        if (!v) v = await getVideo(id);
         setVideo(v);
-        // TODO: swap to a dedicated /editor-source endpoint that returns a
-        // short-lived signed URL for a reduced-quality 360 master.
-        const src = v.preview_url || v.watermarked_url || null;
+        // Admin path: use the 4K master. Customer path: watermarked preview.
+        const src = (v as any).original_url || v.preview_url || v.watermarked_url || null;
         if (!src) throw new Error('No streamable source available for this clip.');
         setSourceUrl(src);
         setPhase('loading-video');
@@ -635,20 +643,36 @@ export default function Editor() {
         <div className="flex-1 min-w-0">
           <div className="font-display font-semibold text-sm truncate flex items-center gap-2">
             {video?.title || (srcOverride ? 'Editor (dev preview)' : 'Editor')}
-            {video && (
-              <span
-                className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-mono uppercase tracking-wider"
-                style={{
-                  background: 'rgba(245,158,11,0.12)',
-                  border: '1px solid rgba(245,158,11,0.4)',
-                  color: '#fbbf24',
-                }}
-                title="You are editing the low-quality watermarked preview. Purchase the raw 360° master for clean 4K/60 export."
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
-                Low-res preview
-              </span>
-            )}
+            {video && (() => {
+              const onOriginal = sourceUrl && (video as any).original_url && sourceUrl === (video as any).original_url;
+              return onOriginal ? (
+                <span
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-mono uppercase tracking-wider"
+                  style={{
+                    background: 'rgba(16,185,129,0.12)',
+                    border: '1px solid rgba(16,185,129,0.4)',
+                    color: '#34d399',
+                  }}
+                  title="Editing the full-quality 360° master"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  4K master
+                </span>
+              ) : (
+                <span
+                  className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-mono uppercase tracking-wider"
+                  style={{
+                    background: 'rgba(245,158,11,0.12)',
+                    border: '1px solid rgba(245,158,11,0.4)',
+                    color: '#fbbf24',
+                  }}
+                  title="You are editing the low-quality watermarked preview. Purchase the raw 360° master for clean 4K/60 export."
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  Low-res preview
+                </span>
+              );
+            })()}
           </div>
           <div className="text-xs text-sky-500 font-mono truncate">
             {PRESETS.find(p => p.id === preset)?.description}
@@ -781,21 +805,38 @@ export default function Editor() {
               onPointerDown={handleCanvasShiftClick}
             />
 
-            {/* Corner badge on the preview itself — unmistakable low-res notice */}
-            {phase === 'ready' && video && (
-              <div
-                className="absolute top-3 left-3 z-10 pointer-events-none flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md"
-                style={{
-                  background: 'rgba(10,14,26,0.75)',
-                  border: '1px solid rgba(245,158,11,0.45)',
-                }}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                <span className="text-[10px] font-display font-semibold text-amber-200 uppercase tracking-[0.18em]">
-                  Low-res preview · clean 4K with purchase
-                </span>
-              </div>
-            )}
+            {/* Corner badge on the preview itself — amber when editing the preview,
+                emerald when the admin has the full 4K master loaded. */}
+            {phase === 'ready' && video && (() => {
+              const onOriginal = sourceUrl && (video as any).original_url && sourceUrl === (video as any).original_url;
+              return onOriginal ? (
+                <div
+                  className="absolute top-3 left-3 z-10 pointer-events-none flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md"
+                  style={{
+                    background: 'rgba(10,14,26,0.75)',
+                    border: '1px solid rgba(16,185,129,0.5)',
+                  }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="text-[10px] font-display font-semibold text-emerald-200 uppercase tracking-[0.18em]">
+                    4K · 360° master · admin
+                  </span>
+                </div>
+              ) : (
+                <div
+                  className="absolute top-3 left-3 z-10 pointer-events-none flex items-center gap-2 px-3 py-1.5 rounded-full backdrop-blur-md"
+                  style={{
+                    background: 'rgba(10,14,26,0.75)',
+                    border: '1px solid rgba(245,158,11,0.45)',
+                  }}
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="text-[10px] font-display font-semibold text-amber-200 uppercase tracking-[0.18em]">
+                    Low-res preview · clean 4K with purchase
+                  </span>
+                </div>
+              );
+            })()}
 
             {phase === 'loading-meta' || phase === 'loading-video' ? (
               <div className="absolute inset-0 flex items-center justify-center text-sky-400 text-sm">

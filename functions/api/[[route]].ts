@@ -315,13 +315,41 @@ app.post('/videos/:id/view', async (c) => {
 
 app.get('/media/:key{.+}', async (c) => {
   const key = c.req.param('key');
+
+  // Parse HTTP Range request header — required for <video> to seek in large files.
+  // Without this the browser tries to buffer the whole 3 GB master, hanging on load.
+  const rangeHeader = c.req.header('Range');
+  if (rangeHeader) {
+    const head = await c.env.R2.head(key);
+    if (!head) return c.json({ message: 'Not found' }, 404);
+    const total = head.size;
+    const m = /bytes=(\d*)-(\d*)/.exec(rangeHeader);
+    let start = m && m[1] !== '' ? parseInt(m[1], 10) : 0;
+    let end   = m && m[2] !== '' ? parseInt(m[2], 10) : total - 1;
+    if (!Number.isFinite(start) || start < 0) start = 0;
+    if (!Number.isFinite(end)   || end   >= total) end = total - 1;
+    if (start > end) return new Response('Range not satisfiable', { status: 416 });
+
+    const object = await c.env.R2.get(key, { range: { offset: start, length: end - start + 1 } });
+    if (!object) return c.json({ message: 'Not found' }, 404);
+
+    const headers = new Headers();
+    headers.set('Content-Type', object.httpMetadata?.contentType || head.httpMetadata?.contentType || 'application/octet-stream');
+    headers.set('Accept-Ranges', 'bytes');
+    headers.set('Content-Length', String(end - start + 1));
+    headers.set('Content-Range', `bytes ${start}-${end}/${total}`);
+    headers.set('Cache-Control', 'public, max-age=3600');
+    return new Response(object.body, { status: 206, headers });
+  }
+
   const object = await c.env.R2.get(key);
   if (!object) return c.json({ message: 'Not found' }, 404);
 
   const headers = new Headers();
   headers.set('Content-Type', object.httpMetadata?.contentType || 'application/octet-stream');
   headers.set('Cache-Control', 'public, max-age=3600');
-
+  headers.set('Accept-Ranges', 'bytes');
+  headers.set('Content-Length', String(object.size));
   return new Response(object.body, { headers });
 });
 
@@ -792,9 +820,18 @@ app.get('/admin/videos', async (c) => {
 });
 
 app.get('/admin/videos/:id', async (c) => {
-  const video = await c.env.DB.prepare('SELECT * FROM videos WHERE id = ?').bind(c.req.param('id')).first();
+  const video = await c.env.DB.prepare('SELECT * FROM videos WHERE id = ?').bind(c.req.param('id')).first() as any;
   if (!video) return c.json({ message: 'Not found' }, 404);
-  return c.json({ ...video, tags: JSON.parse((video as any).tags || '[]'), featured: !!(video as any).featured });
+  return c.json({
+    ...video,
+    tags: JSON.parse(video.tags || '[]'),
+    featured: !!video.featured,
+    thumbnail_url: video.thumbnail_key ? getR2PublicUrl(video.thumbnail_key) : null,
+    watermarked_url: video.watermarked_key ? getR2PublicUrl(video.watermarked_key) : null,
+    preview_url: video.preview_key ? getR2PublicUrl(video.preview_key) : null,
+    // Admin-only: URL to the full-quality 360° master for editor-source use.
+    original_url: video.original_key ? getR2PublicUrl(video.original_key) : null,
+  });
 });
 
 app.post('/admin/videos', async (c) => {
