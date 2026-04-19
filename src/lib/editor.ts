@@ -18,11 +18,24 @@ export interface Keyframe {
   pitch: number;
   zoom: number;
   lens: LensName;
+  /** Easing curve OUT of this keyframe (applies to the segment a→b). */
+  ease?: EasingCurve;
 }
 
 function lerpAngle(a: number, b: number, t: number): number {
   const diff = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
   return a + diff * t;
+}
+
+function applyEasing(k: number, curve: EasingCurve): number {
+  switch (curve) {
+    case 'linear':   return k;
+    case 'smooth':   return k * k * (3 - 2 * k);  // smoothstep — S-curve
+    case 'ease-in':  return k * k;
+    case 'ease-out': return 1 - (1 - k) * (1 - k);
+    case 'hold':     return k < 1 ? 0 : 1;        // stays on A until the very end
+    default:         return k * k * (3 - 2 * k);
+  }
 }
 
 /** Evaluate the keyframe track at time t. Holds at first/last keyframe outside the range.
@@ -37,13 +50,13 @@ export function evalKeyframes(frames: Keyframe[], t: number): Keyframe | null {
   while (i < sorted.length - 1 && sorted[i + 1].t <= t) i++;
   const a = sorted[i];
   const b = sorted[i + 1];
-  const k = (t - a.t) / Math.max(0.0001, b.t - a.t);
+  const rawK = (t - a.t) / Math.max(0.0001, b.t - a.t);
+  const k = applyEasing(rawK, a.ease ?? 'smooth');
   return {
     t,
     yaw:   lerpAngle(a.yaw, b.yaw, k),
     pitch: a.pitch + (b.pitch - a.pitch) * k,
     zoom:  a.zoom + (b.zoom - a.zoom) * k,
-    // Lens snaps — cross-projection blending is a future enhancement.
     lens:  k < 0.5 ? a.lens : b.lens,
   };
 }
@@ -87,6 +100,18 @@ export function cameraFor(preset: PresetName, t: number): { yaw: number; pitch: 
   }
 }
 
+export type TitlePosition = 'top' | 'center' | 'bottom';
+export type EasingCurve = 'linear' | 'smooth' | 'ease-in' | 'ease-out' | 'hold';
+
+export interface ColorAdjust {
+  exposure: number;    // -2..+2 EV
+  contrast: number;    // 0..2 (1 = neutral)
+  saturation: number;  // 0..2 (1 = neutral)
+  temperature: number; // -1..+1 (+ warm, - cool)
+}
+
+export const DEFAULT_COLOR: ColorAdjust = { exposure: 0, contrast: 1, saturation: 1, temperature: 0 };
+
 export interface SceneHandle {
   setVideo(video: HTMLVideoElement): void;
   setPreset(preset: PresetName): void;
@@ -96,7 +121,9 @@ export interface SceneHandle {
   /** Set trim window (in seconds). The preset's t normalizes over this window. */
   setTrim(inSec: number, outSec: number): void;
   /** Set a title card. Fades in/out over the given time window. Empty text = no title. */
-  setTitle(text: string, inSec: number, outSec: number): void;
+  setTitle(text: string, inSec: number, outSec: number, position?: TitlePosition): void;
+  /** Set color grading (exposure, contrast, saturation, temperature). */
+  setColor(adj: ColorAdjust): void;
   /** Set the keyframe track. When non-empty, keyframes drive the camera and lens
    *  (preset is ignored). Manual drag still applies as an offset on top. */
   setKeyframes(frames: Keyframe[]): void;
@@ -133,6 +160,12 @@ const FRAG = /* glsl */`
   uniform float uAspect;      // canvas width/height
   uniform float uZoom;        // 1.0 = default; <1 zooms in, >1 zooms out
   uniform float uTitleOpacity; // 0..1
+  uniform float uExposure;    // EV stops, -2..+2
+  uniform float uContrast;    // 0..2, 1 = neutral
+  uniform float uSaturation;  // 0..2, 1 = neutral
+  uniform float uTemperature; // -1..+1, warm+/cool-
+  uniform vec2  uTitlePos;    // title box anchor (x,y) in UV space
+  uniform vec2  uTitleSize;   // title box size (w,h) in UV fraction
   const float PI = 3.14159265358979;
 
   vec3 rayDirFor(int lens, float fovRad, vec2 uv) {
@@ -178,6 +211,14 @@ const FRAG = /* glsl */`
       col = mix(col, colB, uBlend);
     }
 
+    // --- Color grading (applied to the video before overlays) ---
+    col.rgb *= exp2(uExposure);
+    col.rgb = (col.rgb - 0.5) * uContrast + 0.5;
+    float luma = dot(col.rgb, vec3(0.2126, 0.7152, 0.0722));
+    col.rgb = mix(vec3(luma), col.rgb, uSaturation);
+    col.rgb += vec3(uTemperature * 0.12, 0.0, -uTemperature * 0.12);
+    col.rgb = clamp(col.rgb, 0.0, 1.0);
+
     // Watermark: ~26% wide × 9% tall, anchored 2% from the bottom-right corner.
     vec2 wmAnchor = vec2(0.72, 0.03);
     vec2 wmSize = vec2(0.26, 0.09);
@@ -187,11 +228,9 @@ const FRAG = /* glsl */`
       col.rgb = mix(col.rgb, wm.rgb, wm.a * 0.55);
     }
 
-    // Title card: 80% wide × 20% tall, centered, upper third.
+    // Title card: caller-controllable position + size.
     if (uTitleOpacity > 0.0) {
-      vec2 ttAnchor = vec2(0.1, 0.66);
-      vec2 ttSize = vec2(0.8, 0.20);
-      vec2 tUv = (vUv - ttAnchor) / ttSize;
+      vec2 tUv = (vUv - uTitlePos) / uTitleSize;
       if (tUv.x >= 0.0 && tUv.x <= 1.0 && tUv.y >= 0.0 && tUv.y <= 1.0) {
         vec4 tt = texture2D(uTitle, tUv);
         col.rgb = mix(col.rgb, tt.rgb, tt.a * uTitleOpacity);
@@ -240,6 +279,7 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
   let titleText = '';
   let titleIn = 0;
   let titleOut = 3;
+  let titlePosition: TitlePosition = 'center';
   function repaintTitle() {
     const ctx = titleCanvas.getContext('2d')!;
     ctx.clearRect(0, 0, titleCanvas.width, titleCanvas.height);
@@ -291,6 +331,12 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
       uAspect:        { value: 16 / 9 },
       uZoom:          { value: 1.0 },
       uTitleOpacity:  { value: 0 },
+      uTitlePos:      { value: new THREE.Vector2(0.1, 0.66) },
+      uTitleSize:     { value: new THREE.Vector2(0.8, 0.20) },
+      uExposure:      { value: 0 },
+      uContrast:      { value: 1 },
+      uSaturation:    { value: 1 },
+      uTemperature:   { value: 0 },
     },
   });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
@@ -476,11 +522,28 @@ export function createScene(canvas: HTMLCanvasElement): SceneHandle {
     setLens(l) { lens = l; },
     getLens() { return lens; },
     setTrim(inSec, outSec) { trimIn = Math.max(0, inSec); trimOut = outSec; },
-    setTitle(text, inSec, outSec) {
+    setTitle(text, inSec, outSec, position) {
       titleText = text;
       titleIn = Math.max(0, inSec);
       titleOut = Math.max(titleIn + 0.2, outSec);
+      if (position) titlePosition = position;
       repaintTitle();
+      // Update title-box position in UV space based on position setting.
+      const h = 0.20;
+      const w = 0.8;
+      const x = (1 - w) / 2;
+      // Remember: uv.y is bottom-to-top (0 bottom, 1 top).
+      const y = titlePosition === 'top'    ? (1 - h - 0.06)
+            : titlePosition === 'bottom' ? 0.06
+            : (1 - h) / 2; // center
+      material.uniforms.uTitlePos.value.set(x, y);
+      material.uniforms.uTitleSize.value.set(w, h);
+    },
+    setColor(adj) {
+      material.uniforms.uExposure.value = adj.exposure;
+      material.uniforms.uContrast.value = adj.contrast;
+      material.uniforms.uSaturation.value = adj.saturation;
+      material.uniforms.uTemperature.value = adj.temperature;
     },
     setKeyframes(frames) { keyframes = frames.slice().sort((a, b) => a.t - b.t); },
     captureState() {

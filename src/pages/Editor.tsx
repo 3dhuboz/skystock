@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Monitor, Smartphone, Square } from 'lucide-react';
-import { PRESETS, PresetName, LENSES, LensName, Keyframe, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle } from '../lib/editor';
+import { ArrowLeft, Download, Loader2, Play, Pause, Film, Wand2, Upload, RotateCcw, Aperture, Gauge, Diamond, Trash2, Music, X, Type, Palette } from 'lucide-react';
+import { PRESETS, PresetName, LENSES, LensName, Keyframe, EasingCurve, ColorAdjust, DEFAULT_COLOR, TitlePosition, createScene, SceneHandle, pickSupportedMime, startExport, ExportHandle } from '../lib/editor';
 import { getVideo } from '../lib/api';
 import { Video } from '../lib/types';
 
@@ -26,7 +26,12 @@ export default function Editor() {
   const [keyframes, setKeyframes] = useState<Keyframe[]>([]);
   const [musicName, setMusicName] = useState<string>('');
   const [title, setTitle] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'motion' | 'lens' | 'speed' | 'keyframes'>('motion');
+  const [titleDuration, setTitleDuration] = useState<number>(3);
+  const [titlePosition, setTitlePosition] = useState<TitlePosition>('center');
+  const [color, setColor] = useState<ColorAdjust>(DEFAULT_COLOR);
+  const [defaultEasing, setDefaultEasing] = useState<EasingCurve>('smooth');
+  type TabId = 'motion' | 'lens' | 'speed' | 'keyframes' | 'color' | 'text';
+  const [activeTab, setActiveTab] = useState<TabId>('motion');
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioDestRef = useRef<MediaStreamAudioDestinationNode | null>(null);
@@ -143,10 +148,15 @@ export default function Editor() {
     sceneRef.current?.setKeyframes(keyframes);
   }, [keyframes]);
 
-  // Title: fade in over first 3 seconds of the trimmed region
+  // Title + position + duration, fade in/out at start of the trimmed region
   useEffect(() => {
-    sceneRef.current?.setTitle(title, trimIn, trimIn + 3);
-  }, [title, trimIn]);
+    sceneRef.current?.setTitle(title, trimIn, trimIn + titleDuration, titlePosition);
+  }, [title, trimIn, titleDuration, titlePosition]);
+
+  // Color grading
+  useEffect(() => {
+    sceneRef.current?.setColor(color);
+  }, [color]);
 
   // Watch playhead + enforce loop between trim handles during preview (not during export).
   useEffect(() => {
@@ -256,14 +266,16 @@ export default function Editor() {
     const v = videoElRef.current;
     if (!s || !v) return;
     const st = s.captureState();
-    const newKf: Keyframe = { t: v.currentTime, yaw: st.yaw, pitch: st.pitch, zoom: st.zoom, lens: st.lens };
+    const newKf: Keyframe = { t: v.currentTime, yaw: st.yaw, pitch: st.pitch, zoom: st.zoom, lens: st.lens, ease: defaultEasing };
     setKeyframes(prev => {
-      // Replace any existing keyframe within 0.2s of this time.
       const filtered = prev.filter(k => Math.abs(k.t - newKf.t) > 0.2);
       return [...filtered, newKf].sort((a, b) => a.t - b.t);
     });
-    // Bake drag offsets into the keyframe by resetting them.
     s.resetFrame();
+  }, [defaultEasing]);
+
+  const setKeyframeEasing = useCallback((t: number, ease: EasingCurve) => {
+    setKeyframes(prev => prev.map(k => k.t === t ? { ...k, ease } : k));
   }, []);
 
   const deleteKeyframe = useCallback((t: number) => {
@@ -332,18 +344,6 @@ export default function Editor() {
           <div className="text-xs text-sky-500 font-mono truncate">
             {PRESETS.find(p => p.id === preset)?.description}
           </div>
-        </div>
-        {/* Title input */}
-        <div className="relative hidden sm:block">
-          <Type className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-sky-500 pointer-events-none" />
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value.slice(0, 60))}
-            placeholder="Add title card…"
-            maxLength={60}
-            className="pl-8 pr-2 py-1.5 w-[180px] rounded-lg bg-sky-900/40 border border-sky-800/40 text-sm text-sky-200 placeholder-sky-600 focus:outline-none focus:border-ember-500/50 focus:bg-sky-900/60"
-          />
         </div>
         {/* Music chip */}
         {musicName ? (
@@ -505,6 +505,8 @@ export default function Editor() {
             { id: 'motion',    label: 'Motion',    icon: Wand2 },
             { id: 'lens',      label: 'Lens',      icon: Aperture },
             { id: 'speed',     label: 'Speed',     icon: Gauge },
+            { id: 'color',     label: 'Color',     icon: Palette },
+            { id: 'text',      label: 'Text',      icon: Type },
             { id: 'keyframes', label: 'Keyframes', icon: Diamond },
           ] as const).map(t => {
             const active = activeTab === t.id;
@@ -614,11 +616,26 @@ export default function Editor() {
                 onClick={addKeyframe}
                 disabled={phase !== 'ready'}
                 className="px-4 py-1.5 rounded-lg text-sm font-medium transition-all flex-shrink-0 bg-ember-500/20 text-ember-300 border border-ember-500/40 hover:bg-ember-500/30 disabled:opacity-40"
-                title="Capture current frame (angle + zoom + lens) at the playhead"
+                title="Capture current frame at the playhead"
               >
                 <Diamond className="w-3.5 h-3.5 fill-current" />
                 Add @ {formatTime(playhead)}
               </button>
+              <label className="text-[10px] text-sky-500 uppercase tracking-wider ml-2 flex-shrink-0">
+                Transition
+              </label>
+              <select
+                value={defaultEasing}
+                onChange={(e) => setDefaultEasing(e.target.value as EasingCurve)}
+                className="h-8 px-2 bg-sky-900/40 border border-sky-800/40 rounded text-xs text-sky-200 flex-shrink-0 focus:outline-none focus:border-ember-500/50"
+                title="Easing curve for new keyframes (existing keyframes keep their own curve)"
+              >
+                <option value="linear">Linear</option>
+                <option value="smooth">Smooth (S-curve)</option>
+                <option value="ease-in">Ease in</option>
+                <option value="ease-out">Ease out</option>
+                <option value="hold">Hold</option>
+              </select>
               {keyframes.length > 0 ? (
                 <button
                   onClick={clearKeyframes}
@@ -636,6 +653,90 @@ export default function Editor() {
                   : `${keyframes.length} keyframe${keyframes.length === 1 ? '' : 's'} · preset overridden · Shift-click to delete`}
               </div>
             </>
+          ) : null}
+
+          {activeTab === 'color' ? (
+            <div className="flex items-center gap-5 flex-1">
+              {([
+                { key: 'exposure',    label: 'Exposure',   min: -2, max: 2, step: 0.05, def: 0 },
+                { key: 'contrast',    label: 'Contrast',   min:  0, max: 2, step: 0.05, def: 1 },
+                { key: 'saturation',  label: 'Saturation', min:  0, max: 2, step: 0.05, def: 1 },
+                { key: 'temperature', label: 'Warm / Cool', min: -1, max: 1, step: 0.05, def: 0 },
+              ] as const).map(s => (
+                <label key={s.key} className="flex items-center gap-2 text-xs">
+                  <span className="text-sky-400 w-20 flex-shrink-0">{s.label}</span>
+                  <input
+                    type="range"
+                    min={s.min} max={s.max} step={s.step}
+                    value={color[s.key]}
+                    onChange={(e) => setColor({ ...color, [s.key]: Number(e.target.value) })}
+                    className="w-24 accent-ember-500"
+                  />
+                  <span className="font-mono text-sky-500 tabular-nums w-10 text-right">
+                    {color[s.key] >= 0 ? '+' : ''}{color[s.key].toFixed(2)}
+                  </span>
+                </label>
+              ))}
+              <button
+                onClick={() => setColor(DEFAULT_COLOR)}
+                className="btn-ghost text-xs flex-shrink-0"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                Reset
+              </button>
+            </div>
+          ) : null}
+
+          {activeTab === 'text' ? (
+            <div className="flex items-center gap-3 flex-1">
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value.slice(0, 60))}
+                placeholder="Title card text…"
+                maxLength={60}
+                className="h-8 px-3 flex-1 max-w-[320px] rounded bg-sky-900/40 border border-sky-800/40 text-sm text-sky-100 placeholder-sky-600 focus:outline-none focus:border-ember-500/50"
+              />
+              <label className="flex items-center gap-2 text-xs">
+                <span className="text-sky-400">Duration</span>
+                <input
+                  type="range" min={1} max={10} step={0.5}
+                  value={titleDuration}
+                  onChange={(e) => setTitleDuration(Number(e.target.value))}
+                  className="w-24 accent-ember-500"
+                />
+                <span className="font-mono text-sky-500 tabular-nums w-10">{titleDuration.toFixed(1)}s</span>
+              </label>
+              <div className="flex items-center gap-1">
+                {(['top', 'center', 'bottom'] as const).map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setTitlePosition(p)}
+                    className={
+                      'px-2.5 h-7 text-xs rounded transition-colors capitalize ' +
+                      (titlePosition === p
+                        ? 'bg-ember-500/20 text-ember-300 border border-ember-500/40'
+                        : 'bg-sky-900/30 text-sky-400 border border-sky-800/30 hover:bg-sky-800/40')
+                    }
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+              {title ? (
+                <button
+                  onClick={() => setTitle('')}
+                  className="btn-ghost text-xs flex-shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  Clear
+                </button>
+              ) : null}
+              <div className="flex-1" />
+              <div className="text-[11px] text-sky-600 font-mono">
+                {title ? `Shows first ${titleDuration.toFixed(1)}s` : 'Type to add a title card'}
+              </div>
+            </div>
           ) : null}
         </div>
       </footer>
