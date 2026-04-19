@@ -78,31 +78,31 @@ export const LENSES: { id: LensName; label: string; fov: number; pitchBias: numb
 export function cameraFor(preset: PresetName, t: number): { yaw: number; pitch: number; roll: number } {
   switch (preset) {
     case 'orbit':
-      // Slow ±30° sway around the user's chosen yaw, with a subtle pitch wobble.
+      // Full 180° yaw sweep back-and-forth around the base, visible but not disorienting.
       return {
-        yaw: Math.sin(t * Math.PI * 2) * 0.52,
-        pitch: Math.sin(t * Math.PI * 4) * 0.06,
+        yaw: Math.sin(t * Math.PI * 2) * Math.PI * 0.5,   // ±90° sway
+        pitch: Math.sin(t * Math.PI * 4) * 0.12,
         roll: 0,
       };
     case 'flyThrough':
-      // Dynamic, handheld feel — bigger yaw + pitch wobble + slight roll.
+      // Dynamic handheld feel — punchy yaw + pitch + slight roll.
       return {
-        yaw: Math.sin(t * Math.PI * 3) * 0.35 + Math.sin(t * 9) * 0.08,
-        pitch: Math.sin(t * Math.PI * 4.5) * 0.18,
-        roll: Math.sin(t * Math.PI * 2.5) * 0.06,
+        yaw: Math.sin(t * Math.PI * 3) * 0.8 + Math.sin(t * 9) * 0.12,
+        pitch: Math.sin(t * Math.PI * 4.5) * 0.3,
+        roll: Math.sin(t * Math.PI * 2.5) * 0.1,
       };
     case 'reveal':
-      // Start tilted down (-0.45) and lift to the user's base over the clip.
+      // Start pitched down 45° and lift smoothly to level. Easy to read as motion.
       return {
-        yaw: (t - 0.5) * 0.3,
-        pitch: -0.45 * (1 - t * t),
+        yaw: (t - 0.5) * 0.4,
+        pitch: -0.8 * (1 - t) * (1 - t),
         roll: 0,
       };
     case 'reverseReveal':
-      // Start at the user's base and drift down + slightly away.
+      // Start level, drift down 45° by end of clip.
       return {
-        yaw: -(t * 0.3),
-        pitch: -0.45 * (t * t),
+        yaw: -t * 0.4,
+        pitch: -0.8 * t * t,
         roll: 0,
       };
   }
@@ -179,6 +179,89 @@ export const DEFAULT_DASHBOARD: DashboardConfig = {
   widgets: ['date', 'timer', 'speed', 'altitude'],
   position: 'tl',
 };
+
+export interface TelemetryFrame {
+  t: number;               // seconds from clip start
+  dateTime?: string;       // ISO-ish captured timestamp
+  lat?: number;
+  lon?: number;
+  altRel?: number;         // relative altitude (m, typically from takeoff)
+  altAbs?: number;         // absolute altitude (m, MSL)
+  speed?: number;          // m/s — we'll convert to km/h for display
+  yaw?: number;            // gimbal yaw
+  pitch?: number;          // gimbal pitch
+  roll?: number;           // gimbal roll
+  iso?: number;
+  shutter?: string;
+  fnum?: number;
+  ev?: number;
+  focalLen?: number;
+  colorTemp?: number;
+}
+
+/** Parses DJI SRT sidecar telemetry (as emitted by Avata / Mavic / Osmo drones).
+ *  Each SRT entry contains bracketed key:value pairs plus gimbal angles. */
+export function parseDJISrt(text: string): TelemetryFrame[] {
+  const frames: TelemetryFrame[] = [];
+  const blocks = text.split(/\r?\n\s*\r?\n/);
+  for (const block of blocks) {
+    const lines = block.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length < 2) continue;
+    const timeLine = lines.find(l => /-->/.test(l));
+    if (!timeLine) continue;
+    const tm = timeLine.match(/(\d+):(\d+):(\d+)[,.](\d+)/);
+    if (!tm) continue;
+    const t = Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3]) + Number(tm[4]) / 1000;
+    const body = lines.filter(l => !/-->/.test(l) && !/^\d+$/.test(l)).join(' ');
+    const frame: TelemetryFrame = { t };
+    // Date/time is usually on its own line like "2026-04-17 16:18:06,123" — pick it up.
+    const dtMatch = body.match(/(\d{4}-\d{2}-\d{2}[\sT]\d{2}:\d{2}:\d{2}[.,]?\d*)/);
+    if (dtMatch) frame.dateTime = dtMatch[1].replace(',', '.');
+    // Bracketed pairs.
+    for (const m of body.matchAll(/\[([^\]]+)\]/g)) {
+      const content = m[1];
+      const pairs = content.split(/\s+(?=\w+\s*:)/);  // splits on start-of-next-key
+      for (const p of pairs) {
+        const [kRaw, ...rest] = p.split(':');
+        const k = (kRaw || '').trim().toLowerCase();
+        const valStr = rest.join(':').trim();
+        const num = parseFloat(valStr);
+        if (k === 'latitude')         frame.lat = num;
+        else if (k === 'longitude')   frame.lon = num;
+        else if (k === 'rel_alt')     frame.altRel = num;
+        else if (k === 'abs_alt')     frame.altAbs = num;
+        else if (k === 'drone_speed') frame.speed = num;
+        else if (k === 'iso')         frame.iso = num;
+        else if (k === 'shutter')     frame.shutter = valStr;
+        else if (k === 'fnum')        frame.fnum = num;
+        else if (k === 'ev')          frame.ev = num;
+        else if (k === 'ct')          frame.colorTemp = num;
+        else if (k === 'focal_len')   frame.focalLen = num;
+      }
+    }
+    const gb = body.match(/gb_yaw\s*:\s*(-?[\d.]+)[^\d-]+gb_pitch\s*:\s*(-?[\d.]+)[^\d-]+gb_roll\s*:\s*(-?[\d.]+)/);
+    if (gb) {
+      frame.yaw = parseFloat(gb[1]);
+      frame.pitch = parseFloat(gb[2]);
+      frame.roll = parseFloat(gb[3]);
+    }
+    frames.push(frame);
+  }
+  return frames;
+}
+
+/** Binary-search nearest telemetry frame to the given time. */
+export function lookupTelemetry(frames: TelemetryFrame[], t: number): TelemetryFrame | null {
+  if (!frames.length) return null;
+  let lo = 0, hi = frames.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (frames[mid].t < t) lo = mid + 1; else hi = mid;
+  }
+  const candidate = frames[lo];
+  if (lo > 0 && Math.abs(frames[lo - 1].t - t) < Math.abs(candidate.t - t)) return frames[lo - 1];
+  return candidate;
+}
 
 /** Mock data generator — produces plausible values that vary smoothly with video time.
  *  Replace with SRT/LRF parsing once flight-log support is built. */
