@@ -1305,36 +1305,72 @@ export default function Editor() {
           ) : null}
 
           {activeTab === 'speed' ? (
-            <div className="space-y-3">
-              <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Rate</div>
-              <div className="grid grid-cols-5 gap-1.5">
-                {[0.25, 0.5, 1, 2, 4].map(s => (
-                  <button
-                    key={s}
-                    onClick={() => setSpeed(s)}
-                    disabled={phase !== 'ready'}
-                    className={
-                      'py-2 rounded-md text-xs font-mono transition-all ' +
-                      (speed === s
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
-                        : 'bg-sky-900/30 text-sky-400 border border-sky-800/30 hover:bg-sky-800/40')
-                    }
-                  >
-                    {s}×
-                  </button>
-                ))}
+            <div className="space-y-4">
+              {/* Speed preset tiles — DJI-style visual picker with waveform indicator per ramp */}
+              <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Speed preset</div>
+              <div className="grid grid-cols-2 gap-1.5">
+                {[
+                  { s: 0.25, label: 'Ultra slo-mo', sub: '4× dilated',    grad: 'linear-gradient(135deg,#1e3a8a,#7dd3fc)' },
+                  { s: 0.5,  label: 'Slo-mo',       sub: '2× dilated',    grad: 'linear-gradient(135deg,#0c4a6e,#38bdf8)' },
+                  { s: 1,    label: 'Real-time',    sub: 'Original speed', grad: 'linear-gradient(135deg,#0f172a,#334155)' },
+                  { s: 1.5,  label: 'Urgent',       sub: '1.5× compressed', grad: 'linear-gradient(135deg,#7c2d12,#f97316)' },
+                  { s: 2,    label: 'Fast cut',     sub: '2× compressed',  grad: 'linear-gradient(135deg,#78350f,#fb923c)' },
+                  { s: 4,    label: 'Hyperlapse',   sub: '4× compressed',  grad: 'linear-gradient(135deg,#431407,#fdba74)' },
+                ].map(p => {
+                  const active = Math.abs(speed - p.s) < 0.02;
+                  return (
+                    <button
+                      key={p.s}
+                      onClick={() => setSpeed(p.s)}
+                      disabled={phase !== 'ready'}
+                      className={`relative aspect-[16/10] rounded-lg overflow-hidden text-left transition-all ${
+                        active ? 'ring-2 ring-ember-400 scale-[1.02]' : 'ring-1 ring-sky-800/40 hover:ring-sky-600/60'
+                      }`}
+                      style={{ background: p.grad }}
+                    >
+                      {/* Waveform indicator — density represents time compression */}
+                      <svg viewBox="0 0 100 40" className="absolute inset-x-0 top-2 w-full h-6 opacity-60" preserveAspectRatio="none">
+                        {(() => {
+                          const bars = 24;
+                          const spacing = 100 / bars;
+                          return Array.from({ length: bars }).map((_, i) => {
+                            const density = p.s; // fast = more bars, slow = stretched waveform
+                            const h = 8 + Math.abs(Math.sin(i * 1.3 + density * 4)) * 26;
+                            const x = i * spacing + spacing * 0.2;
+                            return <rect key={i} x={x} y={20 - h / 2} width={spacing * 0.55} height={h} fill="#ffffff" rx="0.5" />;
+                          });
+                        })()}
+                      </svg>
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
+                      <div className="absolute bottom-1.5 left-2 right-2">
+                        <div className="text-[11px] font-display font-bold text-white leading-none drop-shadow-lg">{p.label}</div>
+                        <div className="text-[9px] font-mono text-white/70 mt-0.5 tabular-nums">{p.s}× · {p.sub}</div>
+                      </div>
+                      {active && (
+                        <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-ember-400 shadow-[0_0_8px_rgba(249,115,22,0.8)]" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
-              <div>
+
+              {/* Fine-tune slider */}
+              <div className="rounded-lg border border-sky-800/40 bg-sky-950/40 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-mono uppercase text-sky-500 tracking-wider">Fine-tune</span>
+                  <span className="text-xs font-mono text-ember-300 tabular-nums">{speed.toFixed(2)}×</span>
+                </div>
                 <input
                   type="range" min={0.1} max={4} step={0.05}
                   value={speed}
                   onChange={(e) => setSpeed(Number(e.target.value))}
-                  className="w-full accent-emerald-500"
+                  className="w-full accent-ember-500"
                 />
-                <div className="flex justify-between text-[10px] font-mono text-sky-600 mt-1">
+                <div className="flex justify-between text-[9px] font-mono text-sky-600">
                   <span>0.1×</span><span>1×</span><span>4×</span>
                 </div>
               </div>
+
               <p className="text-[11px] text-sky-500 leading-relaxed">
                 {speed === 1 ? 'Real-time — original speed.' : speed < 1 ? `Slow-motion — ${(1 / speed).toFixed(2)}× dilation.` : `Hyperlapse — ${speed}× compression.`} Bakes into export.
               </p>
