@@ -43,6 +43,8 @@ import Download from './pages/Download';
 import SignInPage from './pages/SignInPage';
 import Account from './pages/Account';
 import SellerApply from './pages/SellerApply';
+import SellerClips from './pages/SellerClips';
+import SellerUpload from './pages/SellerUpload';
 
 // Editor is ~500KB (Three.js) — only load on /edit/* routes
 const Editor = lazyWithReload(() => import('./pages/Editor'), 'editor');
@@ -95,6 +97,7 @@ import AdminUpload from './pages/admin/AdminUpload';
 import AdminEditVideo from './pages/admin/AdminEditVideo';
 import AdminOrders from './pages/admin/AdminOrders';
 import AdminSettings from './pages/admin/AdminSettings';
+import AdminModeration from './pages/admin/AdminModeration';
 
 export default function App() {
   return (
@@ -139,6 +142,20 @@ export default function App() {
           </>
         } />
 
+        {/* Seller workspace — approved sellers only (admins pass) */}
+        <Route path="/seller/clips" element={
+          <>
+            <SignedIn><SellerGate><SellerClips /></SellerGate></SignedIn>
+            <SignedOut><RedirectToSignIn /></SignedOut>
+          </>
+        } />
+        <Route path="/seller/upload" element={
+          <>
+            <SignedIn><SellerGate><SellerUpload /></SellerGate></SignedIn>
+            <SignedOut><RedirectToSignIn /></SignedOut>
+          </>
+        } />
+
         {/* Public routes */}
         <Route element={<Layout />}>
           <Route path="/" element={<Home />} />
@@ -168,6 +185,7 @@ export default function App() {
           <Route path="videos/new" element={<AdminUpload />} />
           <Route path="videos/:id" element={<AdminEditVideo />} />
           <Route path="orders" element={<AdminOrders />} />
+          <Route path="moderation" element={<AdminModeration />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>
       </Routes>

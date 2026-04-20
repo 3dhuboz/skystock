@@ -19,10 +19,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     ...(options?.headers as Record<string, string> | undefined),
   };
 
-  // Admin endpoints need a Clerk session bearer. Attach automatically so every caller
-  // (createVideo, uploadVideoFile, confirm-upload, dashboard, orders, settings) is authed
-  // without passing the token through by hand.
-  if (path.startsWith('/admin/')) {
+  // Admin + Seller endpoints need a Clerk session bearer. Attach automatically so every
+  // caller (createVideo, uploadVideoFile, confirm-upload, dashboard, orders, settings,
+  // seller apply, seller uploads) is authed without passing the token through by hand.
+  if (path.startsWith('/admin/') || path.startsWith('/seller/')) {
     const token = await getClerkToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
@@ -151,6 +151,55 @@ export async function repairVideo(id: string): Promise<{
   report: Record<string, { found: boolean; key?: string; size?: number; skipped?: string }>;
 }> {
   return request(`/admin/videos/${id}/repair`, { method: 'POST' });
+}
+
+// ---- Seller uploads (mirrors admin flow but hits /seller/* endpoints; enforces
+//      ownership on the backend). Status is always pending_review after createSellerVideo. ----
+
+export async function createSellerVideo(data: UploadPayload): Promise<Video> {
+  return request('/seller/videos', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function uploadSellerVideoFile(
+  videoId: string,
+  file: File,
+  type: 'original' | 'preview' | 'thumbnail',
+  onProgress?: (pct: number) => void
+): Promise<{ key: string; url: string }> {
+  const { uploadUrl, key, contentType } = await request<{ uploadUrl: string; key: string; contentType: string }>(
+    `/seller/videos/${videoId}/upload-url`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        type,
+        filename: file.name,
+        contentType: file.type,
+        size: file.size,
+      }),
+    }
+  );
+  await new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.upload.addEventListener('progress', (e) => {
+      if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100));
+    });
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`Upload failed: ${xhr.status}`));
+    });
+    xhr.addEventListener('error', () => reject(new Error('Upload failed')));
+    xhr.open('PUT', uploadUrl);
+    xhr.setRequestHeader('Content-Type', contentType);
+    xhr.send(file);
+  });
+  await request(`/seller/videos/${videoId}/confirm-upload`, {
+    method: 'POST',
+    body: JSON.stringify({ type, key }),
+  });
+  return { key, url: uploadUrl };
 }
 
 export async function uploadVideoFile(

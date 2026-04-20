@@ -449,17 +449,27 @@ export function computeAutoColor(video: HTMLVideoElement, assumeDLogM = false): 
   const meanSat = sumSat / n;
   const meanR = sumR / n / 255;
   const meanB = sumB / n / 255;
+  const minLNorm = minL / 255;
 
-  // Exposure: push mean luminance toward 0.5 (mid-grey).
-  const exposure = Math.max(-1.5, Math.min(1.5, Math.log2(0.5 / Math.max(0.04, meanL))));
-  // Contrast: if the luminance range is narrow, boost.
-  const contrast = contrastRange < 0.45 ? 1.25 : 1.05;
-  // Saturation: aim for healthy 0.35; bump more if flat.
-  const saturation = meanSat < 0.18 ? 1.35 : meanSat < 0.3 ? 1.15 : 1.05;
+  // D-Log M signature: lifted blacks (no pixels near 0) + narrow contrast +
+  // desaturated frame. Auto-detect so operators don't need to know the profile.
+  const looksDLog = assumeDLogM || (minLNorm > 0.06 && contrastRange < 0.55 && meanSat < 0.22);
+
+  // Exposure: push mean luminance toward 0.5 (mid-grey). D-Log sits higher,
+  // so don't over-pull — the de-log curve already drops midtones.
+  const exposure = looksDLog
+    ? Math.max(-0.5, Math.min(0.3, Math.log2(0.5 / Math.max(0.04, meanL)) * 0.4))
+    : Math.max(-1.5, Math.min(1.5, Math.log2(0.5 / Math.max(0.04, meanL))));
+  // Contrast: de-log adds contrast on log sources; keep the post-grade gentle
+  // so tiny highlights (roof glints) don't clip into white speckles.
+  const contrast = looksDLog ? 1.05 : (contrastRange < 0.45 ? 1.20 : 1.05);
+  // Saturation: log sources look desaturated before de-log; let the LUT do
+  // the heavy lifting, then only nudge.
+  const saturation = looksDLog ? 1.08 : (meanSat < 0.18 ? 1.3 : meanSat < 0.3 ? 1.12 : 1.04);
   // Temperature: if image leans blue, warm it (and vice-versa).
   const temperature = Math.max(-0.3, Math.min(0.3, (meanR - meanB) * -1.2));
 
-  return { exposure, contrast, saturation, temperature, dLogM: assumeDLogM };
+  return { exposure, contrast, saturation, temperature, dLogM: looksDLog };
 }
 
 export interface SceneHandle {

@@ -413,6 +413,77 @@ app.get('/seller/me', async (c) => {
   return c.json({ seller: row || null });
 });
 
+/** Helper: require an approved seller. Returns the Clerk userId or null. */
+async function requireApprovedSeller(req: Request, env: Env): Promise<string | null> {
+  const userId = await verifySignedIn(req, env);
+  if (!userId) return null;
+  const row = await env.DB.prepare('SELECT approved FROM sellers WHERE id = ?').bind(userId).first() as any;
+  return row?.approved ? userId : null;
+}
+
+/** POST /seller/videos — create a clip owned by this seller, status auto-pending_review. */
+app.post('/seller/videos', async (c) => {
+  const sellerId = await requireApprovedSeller(c.req.raw, c.env);
+  if (!sellerId) return c.json({ message: 'Not an approved seller' }, 403);
+
+  const data = await c.req.json();
+  const id = generateId();
+  await c.env.DB.prepare(
+    `INSERT INTO videos (id, title, description, location, tags, price_cents, resolution, fps,
+       duration_seconds, status, seller_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review', ?)`
+  ).bind(id, data.title, data.description || '', data.location || '', JSON.stringify(data.tags || []),
+    data.price_cents, data.resolution || '4K', data.fps || 60, data.duration_seconds || 0,
+    sellerId).run();
+
+  const video = await c.env.DB.prepare('SELECT * FROM videos WHERE id = ?').bind(id).first();
+  return c.json(video, 201);
+});
+
+/** POST /seller/videos/:id/upload-url — presigned R2 URL, scoped to own clip. */
+app.post('/seller/videos/:id/upload-url', async (c) => {
+  const sellerId = await requireApprovedSeller(c.req.raw, c.env);
+  if (!sellerId) return c.json({ message: 'Not an approved seller' }, 403);
+  const videoId = c.req.param('id');
+  const owner = await c.env.DB.prepare('SELECT seller_id FROM videos WHERE id = ?').bind(videoId).first() as any;
+  if (!owner || owner.seller_id !== sellerId) return c.json({ message: 'Not your clip' }, 403);
+
+  const { type, filename, contentType } = await c.req.json();
+  const ext = (filename?.split('.').pop() || '').toLowerCase();
+  const safeExt = type === 'thumbnail' ? (ext || 'jpg') : (ext || 'mp4');
+  const key = `videos/${videoId}/${type}.${safeExt}`;
+  const ct = contentType || (type === 'thumbnail' ? 'image/jpeg' : 'video/mp4');
+  const bucket = c.env.R2_BUCKET_NAME || 'skystock-videos';
+  const r2Host = `${c.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+  const signed = await import('aws4fetch').then(({ AwsClient }) => new AwsClient({
+    accessKeyId: c.env.R2_ACCESS_KEY_ID!,
+    secretAccessKey: c.env.R2_SECRET_ACCESS_KEY!,
+    service: 's3',
+    region: 'auto',
+  }).sign(`https://${r2Host}/${bucket}/${key}`, { method: 'PUT', headers: { 'Content-Type': ct }, aws: { signQuery: true } }));
+  return c.json({ uploadUrl: signed.url, key, contentType: ct });
+});
+
+/** POST /seller/videos/:id/confirm-upload — verify R2 head and update the column. */
+app.post('/seller/videos/:id/confirm-upload', async (c) => {
+  const sellerId = await requireApprovedSeller(c.req.raw, c.env);
+  if (!sellerId) return c.json({ message: 'Not an approved seller' }, 403);
+  const videoId = c.req.param('id');
+  const owner = await c.env.DB.prepare('SELECT seller_id FROM videos WHERE id = ?').bind(videoId).first() as any;
+  if (!owner || owner.seller_id !== sellerId) return c.json({ message: 'Not your clip' }, 403);
+
+  const { type, key } = await c.req.json();
+  const obj = await c.env.R2.head(key);
+  if (!obj) return c.json({ message: 'Upload not found in R2' }, 404);
+  const column = type === 'original' ? 'original_key' : type === 'preview' ? 'preview_key' : type === 'thumbnail' ? 'thumbnail_key' : null;
+  if (!column) return c.json({ message: 'Invalid upload type' }, 400);
+  await c.env.DB.prepare(`UPDATE videos SET ${column} = ?, updated_at = datetime('now') WHERE id = ?`).bind(key, videoId).run();
+  if (type === 'original') {
+    await c.env.DB.prepare('UPDATE videos SET file_size_bytes = ? WHERE id = ?').bind(obj.size, videoId).run();
+  }
+  return c.json({ key, size: obj.size });
+});
+
 /** GET /seller/clips — the visitor's own uploaded clips + per-clip stats. */
 app.get('/seller/clips', async (c) => {
   const userId = await verifySignedIn(c.req.raw, c.env);

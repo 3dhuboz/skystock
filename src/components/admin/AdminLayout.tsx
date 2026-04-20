@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { UserButton } from '@clerk/clerk-react';
 import {
-  LayoutDashboard, Film, Upload, ShoppingBag, Settings,
+  LayoutDashboard, Film, Upload, ShoppingBag, Settings, ShieldCheck,
   Menu, X, ExternalLink
 } from 'lucide-react';
 import { Logo } from '../Logo';
@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { to: '/admin', icon: LayoutDashboard, label: 'Dashboard', end: true },
   { to: '/admin/videos', icon: Film, label: 'Videos', end: false },
   { to: '/admin/videos/new', icon: Upload, label: 'Upload', end: true },
+  { to: '/admin/moderation', icon: ShieldCheck, label: 'Moderation', end: true },
   { to: '/admin/orders', icon: ShoppingBag, label: 'Orders', end: false },
   { to: '/admin/settings', icon: Settings, label: 'Settings', end: true },
 ];

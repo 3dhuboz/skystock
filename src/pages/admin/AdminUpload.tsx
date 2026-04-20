@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Upload, X, Film, Image, FileVideo, Check, Sparkles, Loader2, Wand2, Aperture } from 'lucide-react';
 import { useAuth } from '@clerk/clerk-react';
-import { createVideo, uploadVideoFile } from '../../lib/api';
+import { createVideo, uploadVideoFile, createSellerVideo, uploadSellerVideoFile } from '../../lib/api';
 import { createScene, type LensName } from '../../lib/editor';
 import toast from 'react-hot-toast';
 
@@ -15,7 +15,9 @@ interface AiFillResponse {
   error?: string;
 }
 
-export default function AdminUpload() {
+export default function AdminUpload({ sellerMode = false }: { sellerMode?: boolean } = {}) {
+  const createFn = sellerMode ? createSellerVideo : createVideo;
+  const uploadFn = sellerMode ? uploadSellerVideoFile : uploadVideoFile;
   const navigate = useNavigate();
   const { getToken } = useAuth();
   const [submitting, setSubmitting] = useState(false);
@@ -421,7 +423,7 @@ export default function AdminUpload() {
     setSubmitting(true);
     setUploadProgress({});
     try {
-      const video = await createVideo({
+      const video = await createFn({
         title: form.title,
         description: form.description,
         location: form.location,
@@ -439,12 +441,12 @@ export default function AdminUpload() {
       if (files.thumbnail) queue.push({ type: 'thumbnail', file: files.thumbnail });
 
       for (const item of queue) {
-        await uploadVideoFile(video.id, item.file, item.type, pct => setUploadProgress(p => ({ ...p, [item.type]: pct })));
+        await uploadFn(video.id, item.file, item.type, pct => setUploadProgress(p => ({ ...p, [item.type]: pct })));
         setUploadProgress(p => ({ ...p, [item.type]: 100 }));
       }
 
-      toast.success('Video uploaded successfully!');
-      navigate('/admin/videos');
+      toast.success(sellerMode ? 'Uploaded! Clip submitted for review.' : 'Video uploaded successfully!');
+      navigate(sellerMode ? '/seller/clips' : '/admin/videos');
     } catch (err: any) {
       toast.error(err.message || 'Upload failed');
     } finally {
