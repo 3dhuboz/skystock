@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react';
 import { Loader2 } from 'lucide-react';
 import { useIsAdmin } from './lib/admin';
+import { useIsSeller } from './lib/seller';
 
 /**
  * Wraps React.lazy with a one-shot auto-reload if the dynamic import fails.
@@ -41,6 +42,7 @@ import Success from './pages/Success';
 import Download from './pages/Download';
 import SignInPage from './pages/SignInPage';
 import Account from './pages/Account';
+import SellerApply from './pages/SellerApply';
 
 // Editor is ~500KB (Three.js) — only load on /edit/* routes
 const Editor = lazyWithReload(() => import('./pages/Editor'), 'editor');
@@ -65,6 +67,23 @@ function AdminGate({ children }: { children: React.ReactNode }) {
     );
   }
   if (!isAdmin) return <Navigate to="/account" replace />;
+  return <>{children}</>;
+}
+
+/** Gates /seller/* routes. Admins always pass through (they can test the
+ *  seller experience); otherwise the user must have the 'seller' role. */
+function SellerGate({ children }: { children: React.ReactNode }) {
+  const { isAdmin } = useIsAdmin();
+  const { isSeller, isLoaded } = useIsSeller();
+  if (!isLoaded) {
+    return (
+      <div className="fixed inset-0 bg-[#0a0e1a] flex items-center justify-center text-sky-400 text-sm">
+        <Loader2 className="w-5 h-5 animate-spin mr-3" />
+        Checking access…
+      </div>
+    );
+  }
+  if (!isSeller && !isAdmin) return <Navigate to="/seller/apply" replace />;
   return <>{children}</>;
 }
 
@@ -109,6 +128,14 @@ export default function App() {
           <>
             <SignedIn><Account /></SignedIn>
             <SignedOut><RedirectToSignIn /></SignedOut>
+          </>
+        } />
+
+        {/* Seller apply — visible to signed-in users, regardless of seller role */}
+        <Route path="/seller/apply" element={
+          <>
+            <SignedIn><SellerApply /></SignedIn>
+            <SignedOut><SellerApply /></SignedOut>
           </>
         } />
 

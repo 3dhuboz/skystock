@@ -345,6 +345,181 @@ app.get('/me/orders', async (c) => {
 });
 
 // ============================
+// SELLER: apply + self-serve
+// ============================
+
+/** Helper: decode Clerk JWT payload, return {userId,sessionId} (or null).
+ *  Shared between verifyAdmin + verifySignedIn. Note: this does NOT verify the
+ *  signature — call Clerk /v1/sessions/{sid} to fully authenticate. */
+function decodeClerkJwt(req: Request): { userId: string | null; sessionId: string | null } {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) return { userId: null, sessionId: null };
+  const payload = decodeJwtPayload(authHeader.slice(7));
+  return { userId: payload?.sub || null, sessionId: payload?.sid || null };
+}
+
+/** Authenticate a regular signed-in visitor (not necessarily admin/seller).
+ *  Returns userId if the Clerk session is active, otherwise null. */
+async function verifySignedIn(req: Request, env: Env): Promise<string | null> {
+  const { userId, sessionId } = decodeClerkJwt(req);
+  if (!userId || !sessionId || !env.CLERK_SECRET_KEY) return null;
+  try {
+    const res = await fetch(`https://api.clerk.com/v1/sessions/${sessionId}`, {
+      headers: { Authorization: `Bearer ${env.CLERK_SECRET_KEY}` },
+    });
+    if (!res.ok) return null;
+    const session = await res.json() as any;
+    if (session.status !== 'active' || session.user_id !== userId) return null;
+    return userId;
+  } catch { return null; }
+}
+
+/** POST /seller/apply — creates (or upserts) a sellers row with approved=0.
+ *  Requires a signed-in Clerk session; the seller row's id IS the Clerk user id.
+ *  Admin decides to approve via /admin/sellers/:id/approve. */
+app.post('/seller/apply', async (c) => {
+  const userId = await verifySignedIn(c.req.raw, c.env);
+  if (!userId) return c.json({ message: 'Not signed in' }, 401);
+
+  const body = await c.req.json().catch(() => ({} as any));
+  const { display_name, location, bio, rpl_number, payout_notes, email } = body;
+
+  if (!display_name || !location || !payout_notes) {
+    return c.json({ message: 'display_name, location and payout_notes are required' }, 400);
+  }
+
+  await c.env.DB.prepare(
+    `INSERT INTO sellers (id, display_name, bio, location, email, payout_notes, rpl_number, approved, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
+     ON CONFLICT(id) DO UPDATE SET
+       display_name = excluded.display_name,
+       bio = excluded.bio,
+       location = excluded.location,
+       email = excluded.email,
+       payout_notes = excluded.payout_notes,
+       rpl_number = excluded.rpl_number,
+       updated_at = datetime('now')`
+  ).bind(userId, display_name.slice(0, 60), (bio || '').slice(0, 240), location.slice(0, 80),
+         (email || '').slice(0, 160), payout_notes.slice(0, 120), (rpl_number || '').slice(0, 24)).run();
+
+  return c.json({ ok: true, id: userId, status: 'pending_review' });
+});
+
+/** GET /seller/me — is this visitor a seller? Returns their row if so. */
+app.get('/seller/me', async (c) => {
+  const userId = await verifySignedIn(c.req.raw, c.env);
+  if (!userId) return c.json({ seller: null });
+  const row = await c.env.DB.prepare('SELECT * FROM sellers WHERE id = ?').bind(userId).first();
+  return c.json({ seller: row || null });
+});
+
+/** GET /seller/clips — the visitor's own uploaded clips + per-clip stats. */
+app.get('/seller/clips', async (c) => {
+  const userId = await verifySignedIn(c.req.raw, c.env);
+  if (!userId) return c.json({ message: 'Not signed in' }, 401);
+
+  const rows = await c.env.DB.prepare(
+    `SELECT v.*,
+            (SELECT COUNT(*) FROM orders o WHERE o.video_id = v.id AND o.status = 'completed') as sale_count,
+            (SELECT COALESCE(SUM(o.amount_cents), 0) FROM orders o WHERE o.video_id = v.id AND o.status = 'completed') as gross_cents
+       FROM videos v
+      WHERE v.seller_id = ? AND v.status != 'archived'
+      ORDER BY v.created_at DESC`
+  ).bind(userId).all();
+
+  const seller = await c.env.DB.prepare('SELECT revenue_share_bps FROM sellers WHERE id = ?').bind(userId).first() as any;
+  const share = (seller?.revenue_share_bps ?? 8000) / 10000;
+
+  const clips = (rows.results || []).map((v: any) => ({
+    id: v.id,
+    title: v.title,
+    status: v.status,
+    price_cents: v.price_cents,
+    resolution: v.resolution,
+    fps: v.fps,
+    duration_seconds: v.duration_seconds,
+    sale_count: v.sale_count || 0,
+    gross_cents: v.gross_cents || 0,
+    earnings_cents: Math.round((v.gross_cents || 0) * share),
+    created_at: v.created_at,
+    moderation_notes: v.moderation_notes,
+    thumbnail_url: v.thumbnail_key ? getR2PublicUrl(v.thumbnail_key) : null,
+  }));
+
+  const totals = clips.reduce((acc, c) => ({
+    sales: acc.sales + c.sale_count,
+    gross: acc.gross + c.gross_cents,
+    earnings: acc.earnings + c.earnings_cents,
+  }), { sales: 0, gross: 0, earnings: 0 });
+
+  return c.json({ clips, share_bps: seller?.revenue_share_bps ?? 8000, totals });
+});
+
+// ============================
+// ADMIN: moderation queue + seller approval
+// ============================
+
+/** GET /admin/sellers — list of all sellers (approved + pending). */
+app.get('/admin/sellers', async (c) => {
+  const rows = await c.env.DB.prepare('SELECT * FROM sellers ORDER BY approved ASC, created_at DESC').all();
+  return c.json({ sellers: rows.results || [] });
+});
+
+/** POST /admin/sellers/:id/approve */
+app.post('/admin/sellers/:id/approve', async (c) => {
+  await c.env.DB.prepare(
+    `UPDATE sellers SET approved = 1, approved_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`
+  ).bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+/** POST /admin/sellers/:id/reject  body: { reason } */
+app.post('/admin/sellers/:id/reject', async (c) => {
+  const { reason } = await c.req.json().catch(() => ({} as any));
+  await c.env.DB.prepare(
+    `UPDATE sellers SET approved = 0, payout_notes = ?, updated_at = datetime('now') WHERE id = ?`
+  ).bind(`REJECTED: ${reason || 'no reason given'}`, c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+/** GET /admin/moderation — clips waiting for review (status='pending_review'). */
+app.get('/admin/moderation', async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT v.*, s.display_name as seller_name, s.location as seller_location
+       FROM videos v
+       LEFT JOIN sellers s ON s.id = v.seller_id
+      WHERE v.status = 'pending_review'
+      ORDER BY v.created_at ASC`
+  ).all();
+
+  const clips = (rows.results || []).map((v: any) => ({
+    ...v,
+    tags: JSON.parse(v.tags || '[]'),
+    thumbnail_url: v.thumbnail_key ? getR2PublicUrl(v.thumbnail_key) : null,
+    preview_url: v.preview_key ? getR2PublicUrl(v.preview_key) : null,
+    watermarked_url: v.watermarked_key ? getR2PublicUrl(v.watermarked_key) : null,
+  }));
+  return c.json({ clips });
+});
+
+/** POST /admin/moderation/:id/approve — publish the clip. */
+app.post('/admin/moderation/:id/approve', async (c) => {
+  await c.env.DB.prepare(
+    `UPDATE videos SET status='published', moderation_notes=NULL, updated_at=datetime('now') WHERE id = ?`
+  ).bind(c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+/** POST /admin/moderation/:id/reject  body: { reason } — send back to draft with notes. */
+app.post('/admin/moderation/:id/reject', async (c) => {
+  const { reason } = await c.req.json().catch(() => ({} as any));
+  await c.env.DB.prepare(
+    `UPDATE videos SET status='draft', moderation_notes=?, updated_at=datetime('now') WHERE id = ?`
+  ).bind(reason || 'rejected without reason', c.req.param('id')).run();
+  return c.json({ ok: true });
+});
+
+// ============================
 // PUBLIC: MEDIA (R2 proxy)
 // ============================
 
