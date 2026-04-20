@@ -33,6 +33,7 @@ interface PendingSeller {
   payout_notes: string;
   approved: number;
   created_at: string;
+  revenue_share_bps: number;
 }
 
 export default function AdminModeration() {
@@ -284,16 +285,81 @@ export default function AdminModeration() {
           <div className="glass-card p-6 text-sm text-sky-500">No approved sellers yet.</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {approvedSellers.map(s => (
-              <div key={s.id} className="glass-card p-4">
-                <div className="font-display font-semibold text-white">{s.display_name}</div>
-                <div className="text-xs text-sky-400 mt-0.5">{s.location}</div>
-                <div className="text-[10px] font-mono text-sky-600 mt-2 break-all">{s.id}</div>
-              </div>
-            ))}
+            {approvedSellers.map(s => <ApprovedSellerCard key={s.id} seller={s} getToken={getToken} />)}
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+interface ApprovedSellerCardProps {
+  seller: PendingSeller;
+  getToken: () => Promise<string | null>;
+}
+
+function ApprovedSellerCard({ seller, getToken }: ApprovedSellerCardProps) {
+  const [bps, setBps] = useState<number>(seller.revenue_share_bps ?? 8000);
+  const [saving, setSaving] = useState(false);
+
+  async function save(newBps: number) {
+    setSaving(true);
+    try {
+      const t = await getToken();
+      const res = await fetch(`/api/admin/sellers/${seller.id}/share`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+        body: JSON.stringify({ bps: newBps }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setBps(newBps);
+      toast.success(`Share set to ${(newBps / 100).toFixed(0)}%`);
+    } catch (e: any) {
+      toast.error(e?.message || 'failed');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="glass-card p-4">
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <div className="font-display font-semibold text-white truncate">{seller.display_name}</div>
+        <a
+          href={`/s/${seller.id}`}
+          target="_blank"
+          rel="noopener"
+          className="text-[10px] font-mono text-sky-400 hover:text-white shrink-0 uppercase tracking-wider"
+        >
+          profile →
+        </a>
+      </div>
+      <div className="text-xs text-sky-400">{seller.location}</div>
+      <div className="text-[10px] font-mono text-sky-600 mt-2 break-all line-clamp-1">{seller.id}</div>
+
+      <div className="mt-3 pt-3 border-t border-sky-800/30">
+        <div className="text-[10px] font-mono uppercase text-sky-500 tracking-wider mb-1.5">Revenue share</div>
+        <div className="flex items-center gap-1">
+          {[7000, 8000, 8500, 10000].map(opt => {
+            const active = bps === opt;
+            const label = opt === 10000 ? 'No fee' : `${(opt / 100).toFixed(0)}%`;
+            return (
+              <button
+                key={opt}
+                onClick={() => save(opt)}
+                disabled={saving || active}
+                className={`flex-1 px-1 py-1 rounded text-[10px] font-mono transition-all ${
+                  active
+                    ? 'bg-ember-500/25 border border-ember-400/50 text-ember-200'
+                    : 'bg-sky-900/40 border border-sky-800/40 text-sky-400 hover:text-white'
+                }`}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }

@@ -16,6 +16,8 @@ interface SellerClip {
   sale_count: number;
   gross_cents: number;
   earnings_cents: number;
+  /** true when earnings came from recorded sales; false when it's a projection at the current share. */
+  earnings_locked: boolean;
   created_at: string;
   moderation_notes: string | null;
   thumbnail_url: string | null;
@@ -229,9 +231,11 @@ export default function SellerClips() {
                       <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {formatDuration(v.duration_seconds)}</span>
                       <span>{formatPrice(v.price_cents)}</span>
                       <span>{v.sale_count} sales</span>
-                      {v.earnings_cents > 0 && (
+                      {v.earnings_locked ? (
                         <span className="text-emerald-300">earned {formatPrice(v.earnings_cents)}</span>
-                      )}
+                      ) : v.status === 'published' ? (
+                        <span className="text-sky-600">~{formatPrice(v.earnings_cents)} per sale</span>
+                      ) : null}
                     </div>
                     {v.status === 'draft' && v.moderation_notes && (
                       <div className="mt-2 text-[11px] text-red-300 bg-red-500/10 border border-red-500/30 rounded px-2 py-1 inline-block">

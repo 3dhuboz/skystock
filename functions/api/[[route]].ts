@@ -712,17 +712,20 @@ app.get('/seller/clips', async (c) => {
   const userId = await verifySignedIn(c.req.raw, c.env);
   if (!userId) return c.json({ message: 'Not signed in' }, 401);
 
+  // Use the per-order seller_payout_cents locked in at capture time so changing
+  // the seller's current revenue_share_bps later can't rewrite history.
   const rows = await c.env.DB.prepare(
     `SELECT v.*,
             (SELECT COUNT(*) FROM orders o WHERE o.video_id = v.id AND o.status = 'completed') as sale_count,
-            (SELECT COALESCE(SUM(o.amount_cents), 0) FROM orders o WHERE o.video_id = v.id AND o.status = 'completed') as gross_cents
+            (SELECT COALESCE(SUM(o.amount_cents), 0)       FROM orders o WHERE o.video_id = v.id AND o.status = 'completed') as gross_cents,
+            (SELECT COALESCE(SUM(o.seller_payout_cents),0) FROM orders o WHERE o.video_id = v.id AND o.status = 'completed') as earnings_cents
        FROM videos v
       WHERE v.seller_id = ? AND v.status != 'archived'
       ORDER BY v.created_at DESC`
   ).bind(userId).all();
 
   const seller = await c.env.DB.prepare('SELECT revenue_share_bps FROM sellers WHERE id = ?').bind(userId).first() as any;
-  const share = (seller?.revenue_share_bps ?? 8000) / 10000;
+  const currentShare = seller?.revenue_share_bps ?? 8000;
 
   const clips = (rows.results || []).map((v: any) => ({
     id: v.id,
@@ -734,7 +737,10 @@ app.get('/seller/clips', async (c) => {
     duration_seconds: v.duration_seconds,
     sale_count: v.sale_count || 0,
     gross_cents: v.gross_cents || 0,
-    earnings_cents: Math.round((v.gross_cents || 0) * share),
+    // If the clip has sales, use locked earnings. Otherwise show a projection
+    // at the CURRENT share so sellers can price with confidence.
+    earnings_cents: v.earnings_cents || Math.round((v.price_cents || 0) * currentShare / 10000),
+    earnings_locked: (v.sale_count || 0) > 0,
     created_at: v.created_at,
     moderation_notes: v.moderation_notes,
     thumbnail_url: v.thumbnail_key ? getR2PublicUrl(v.thumbnail_key) : null,
@@ -743,10 +749,10 @@ app.get('/seller/clips', async (c) => {
   const totals = clips.reduce((acc, c) => ({
     sales: acc.sales + c.sale_count,
     gross: acc.gross + c.gross_cents,
-    earnings: acc.earnings + c.earnings_cents,
+    earnings: acc.earnings + (c.earnings_locked ? c.earnings_cents : 0),
   }), { sales: 0, gross: 0, earnings: 0 });
 
-  return c.json({ clips, share_bps: seller?.revenue_share_bps ?? 8000, totals });
+  return c.json({ clips, share_bps: currentShare, totals });
 });
 
 // ============================
@@ -794,6 +800,22 @@ app.post('/admin/sellers/:id/approve', async (c) => {
     c.executionCtx.waitUntil(sendSellerApprovedEmail(c.env, row.email, row.display_name || 'operator'));
   }
   return c.json({ ok: true, clerk: clerkResult });
+});
+
+/** POST /admin/sellers/:id/share  body: { bps } — set this seller's revenue share.
+ *  Basis points: 8000 = 80% default, 8500 = 85%, 10000 = 100% (e.g., admin's own clips
+ *  where the platform doesn't take a cut). Accepts 0..10000. */
+app.post('/admin/sellers/:id/share', async (c) => {
+  const id = c.req.param('id');
+  const { bps } = await c.req.json().catch(() => ({} as any));
+  const n = Number(bps);
+  if (!Number.isFinite(n) || n < 0 || n > 10000) {
+    return c.json({ message: 'bps must be 0..10000' }, 400);
+  }
+  await c.env.DB.prepare(
+    `UPDATE sellers SET revenue_share_bps = ?, updated_at = datetime('now') WHERE id = ?`
+  ).bind(Math.round(n), id).run();
+  return c.json({ ok: true, bps: Math.round(n) });
 });
 
 /** POST /admin/sellers/:id/reject  body: { reason } — clears the role too. */
@@ -968,14 +990,32 @@ app.post('/paypal/capture-order', async (c) => {
 
   const captureId = captureData.purchase_units?.[0]?.payments?.captures?.[0]?.id || '';
 
-  // Update order
-  await c.env.DB.prepare(
-    "UPDATE orders SET status = 'completed', paypal_capture_id = ?, completed_at = datetime('now') WHERE id = ?"
-  ).bind(captureId, orderId).run();
-
-  // Update video download count
+  // Pull the order + seller split for the price-split calculation. Locking the
+  // share at capture time means future seller-share edits can't rewrite history.
   const order = await c.env.DB.prepare('SELECT * FROM orders WHERE id = ?').bind(orderId).first() as any;
+  const video = await c.env.DB.prepare('SELECT seller_id, title FROM videos WHERE id = ?').bind(order.video_id).first() as any;
+  const sellerId: string | null = video?.seller_id || null;
+  let revenueShareBps = 10000; // admin-owned / legacy clip default: 100% to platform treasury
+  if (sellerId) {
+    const seller = await c.env.DB.prepare('SELECT revenue_share_bps FROM sellers WHERE id = ?').bind(sellerId).first() as any;
+    revenueShareBps = seller?.revenue_share_bps ?? 8000;
+  }
+  const sellerPayoutCents = sellerId ? Math.round(order.amount_cents * revenueShareBps / 10000) : 0;
+  const platformFeeCents = order.amount_cents - sellerPayoutCents;
 
+  await c.env.DB.prepare(
+    `UPDATE orders
+        SET status='completed',
+            paypal_capture_id=?,
+            completed_at=datetime('now'),
+            seller_id=?,
+            revenue_share_bps=?,
+            seller_payout_cents=?,
+            platform_fee_cents=?
+      WHERE id = ?`
+  ).bind(captureId, sellerId, revenueShareBps, sellerPayoutCents, platformFeeCents, orderId).run();
+
+  // Video download count bumps on capture, regardless of seller ownership.
   await c.env.DB.prepare('UPDATE videos SET download_count = download_count + 1 WHERE id = ?').bind(order.video_id).run();
 
   // Create download token
@@ -986,8 +1026,7 @@ app.post('/paypal/capture-order', async (c) => {
     'INSERT INTO download_tokens (id, order_id, video_id, token, expires_at, max_downloads) VALUES (?, ?, ?, ?, ?, ?)'
   ).bind(generateId(), orderId, order.video_id, downloadToken, expiresAt, 5).run();
 
-  // Send emails (download link + receipt)
-  const video = await c.env.DB.prepare('SELECT title FROM videos WHERE id = ?').bind(order.video_id).first() as any;
+  // Send emails (download link + receipt) — video var above only has seller_id + title
   try {
     await Promise.all([
       sendDownloadEmail(c.env, order.buyer_email, video.title, downloadToken),
