@@ -18,6 +18,9 @@ RESEND_FROM_EMAIL = "noreply@cupcycle.au"
 SITE_URL = "https://skystock.pages.dev"
 SITE_NAME = "SkyStock FPV"
 ADMIN_USER_IDS = "user_3CZ73IGcVwlxf7T8DQW7hSKw7MN"
+# Admin notification email — where "new seller application" + "new clip
+# pending review" alerts land. Put your real inbox here and redeploy.
+ADMIN_EMAIL = ""
 
 # Vite build-time variables (VITE_ prefix required for frontend)
 VITE_CLERK_PUBLISHABLE_KEY = "pk_test_ZWxlY3RyaWMtbWFzdG9kb24tOC5jbGVyay5hY2NvdW50cy5kZXYk"

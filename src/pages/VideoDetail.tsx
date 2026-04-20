@@ -277,6 +277,14 @@ export default function VideoDetail() {
                   <Download className="w-3.5 h-3.5" /> {video.download_count} downloads
                 </span>
                 <span className="text-xs text-sky-600 font-mono">Uploaded {formatDate(video.created_at)}</span>
+                {video.seller_id && video.seller_name && (
+                  <Link
+                    to={`/s/${video.seller_id}`}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-ember-500/10 border border-ember-400/40 text-ember-200 hover:bg-ember-500/20 transition-colors text-xs"
+                  >
+                    Shot by <strong className="font-display font-semibold">{video.seller_name}</strong>
+                  </Link>
+                )}
               </div>
 
               <p className="mt-5 text-sky-300 leading-relaxed max-w-3xl">{video.description}</p>

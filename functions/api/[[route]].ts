@@ -219,9 +219,7 @@ async function sendClipRejectedEmail(env: Env, to: string, clipTitle: string, re
 }
 
 async function notifyAdminNewApplication(env: Env, applicant: { display_name: string; location: string; email: string; id: string }) {
-  const adminEmail = (env.ADMIN_USER_IDS?.split(',')[0] || '').trim();
-  // ADMIN_USER_IDS stores Clerk user ids, not emails — skip self-notify if we don't
-  // have a dedicated admin email yet. Future: store admin_email in [vars].
+  const adminEmail = (env.ADMIN_EMAIL || '').trim();
   if (!adminEmail.includes('@')) return false;
   return sendEmail(env, {
     to: adminEmail,
@@ -238,7 +236,7 @@ async function notifyAdminNewApplication(env: Env, applicant: { display_name: st
 }
 
 async function notifyAdminNewClip(env: Env, clip: { title: string; id: string; seller: string }) {
-  const adminEmail = (env.ADMIN_USER_IDS?.split(',')[0] || '').trim();
+  const adminEmail = (env.ADMIN_EMAIL || '').trim();
   if (!adminEmail.includes('@')) return false;
   return sendEmail(env, {
     to: adminEmail,
@@ -448,7 +446,11 @@ app.get('/videos', async (c) => {
 });
 
 app.get('/videos/:id', async (c) => {
-  const video = await c.env.DB.prepare('SELECT * FROM videos WHERE id = ? AND status = ?').bind(c.req.param('id'), 'published').first();
+  const video = await c.env.DB.prepare(
+    `SELECT v.*, s.display_name as seller_name
+       FROM videos v LEFT JOIN sellers s ON s.id = v.seller_id
+      WHERE v.id = ? AND v.status = 'published'`
+  ).bind(c.req.param('id')).first();
   if (!video) return c.json({ message: 'Video not found' }, 404);
 
   return c.json({
@@ -499,6 +501,56 @@ app.get('/me/orders', async (c) => {
   }));
 
   return c.json({ purchases });
+});
+
+// ============================
+// PUBLIC: SELLER PROFILES (/s/:id)
+// ============================
+
+/** GET /sellers/:id — public profile: display name, location, bio, published clips. */
+app.get('/sellers/:id', async (c) => {
+  const id = c.req.param('id');
+  const seller = await c.env.DB.prepare(
+    'SELECT id, display_name, bio, location, approved, created_at FROM sellers WHERE id = ? AND approved = 1'
+  ).bind(id).first() as any;
+  if (!seller) return c.json({ message: 'Not found' }, 404);
+
+  const clipsRes = await c.env.DB.prepare(
+    `SELECT id, title, description, location, tags, price_cents, duration_seconds,
+            resolution, fps, preview_key, watermarked_key, thumbnail_key, status,
+            download_count, view_count, featured, created_at
+       FROM videos
+      WHERE seller_id = ? AND status = 'published'
+      ORDER BY created_at DESC
+      LIMIT 60`
+  ).bind(id).all();
+
+  const clips = (clipsRes.results || []).map((v: any) => ({
+    ...v,
+    tags: JSON.parse(v.tags || '[]'),
+    featured: !!v.featured,
+    thumbnail_url: v.thumbnail_key ? getR2PublicUrl(v.thumbnail_key) : null,
+    preview_url: v.preview_key ? getR2PublicUrl(v.preview_key) : null,
+    watermarked_url: v.watermarked_key ? getR2PublicUrl(v.watermarked_key) : null,
+  }));
+
+  const totals = clips.reduce((acc, c) => ({
+    clips: acc.clips + 1,
+    views: acc.views + (c.view_count || 0),
+    sales: acc.sales + (c.download_count || 0),
+  }), { clips: 0, views: 0, sales: 0 });
+
+  return c.json({
+    seller: {
+      id: seller.id,
+      display_name: seller.display_name,
+      bio: seller.bio,
+      location: seller.location,
+      member_since: seller.created_at,
+    },
+    clips,
+    totals,
+  });
 });
 
 // ============================

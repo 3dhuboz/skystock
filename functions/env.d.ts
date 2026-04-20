@@ -10,6 +10,7 @@ interface Env {
   RESEND_API_KEY: string;
   RESEND_FROM_EMAIL: string;
   ADMIN_USER_IDS: string;
+  ADMIN_EMAIL?: string;
   SITE_URL: string;
   SITE_NAME: string;
   ANTHROPIC_API_KEY?: string;

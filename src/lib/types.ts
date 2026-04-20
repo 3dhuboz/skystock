@@ -23,6 +23,9 @@ export interface Video {
   preview_url?: string;
   watermarked_url?: string;
   thumbnail_url?: string;
+  // Marketplace
+  seller_id?: string;
+  seller_name?: string;
 }
 
 export interface Order {

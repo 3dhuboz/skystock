@@ -45,6 +45,7 @@ import Account from './pages/Account';
 import SellerApply from './pages/SellerApply';
 import SellerClips from './pages/SellerClips';
 import SellerUpload from './pages/SellerUpload';
+import SellerProfile from './pages/SellerProfile';
 
 // Editor is ~500KB (Three.js) — only load on /edit/* routes
 const Editor = lazyWithReload(() => import('./pages/Editor'), 'editor');
@@ -161,6 +162,7 @@ export default function App() {
           <Route path="/" element={<Home />} />
           <Route path="/browse" element={<Browse />} />
           <Route path="/video/:id" element={<VideoDetail />} />
+          <Route path="/s/:id" element={<SellerProfile />} />
           <Route path="/success" element={<Success />} />
           <Route path="/download" element={<Download />} />
         </Route>
