@@ -591,25 +591,27 @@ app.post('/seller/apply', async (c) => {
   if (!userId) return c.json({ message: 'Not signed in' }, 401);
 
   const body = await c.req.json().catch(() => ({} as any));
-  const { display_name, location, bio, rpl_number, payout_notes, email } = body;
+  const { display_name, location, bio, rpl_number, payout_paypal_email, payout_notes, email } = body;
 
-  if (!display_name || !location || !payout_notes) {
-    return c.json({ message: 'display_name, location and payout_notes are required' }, 400);
+  if (!display_name || !location || !payout_paypal_email || !String(payout_paypal_email).includes('@')) {
+    return c.json({ message: 'display_name, location and a valid payout PayPal email are required' }, 400);
   }
 
   await c.env.DB.prepare(
-    `INSERT INTO sellers (id, display_name, bio, location, email, payout_notes, rpl_number, approved, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
+    `INSERT INTO sellers (id, display_name, bio, location, email, payout_paypal_email, payout_notes, rpl_number, approved, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, datetime('now'), datetime('now'))
      ON CONFLICT(id) DO UPDATE SET
        display_name = excluded.display_name,
        bio = excluded.bio,
        location = excluded.location,
        email = excluded.email,
+       payout_paypal_email = excluded.payout_paypal_email,
        payout_notes = excluded.payout_notes,
        rpl_number = excluded.rpl_number,
        updated_at = datetime('now')`
   ).bind(userId, display_name.slice(0, 60), (bio || '').slice(0, 240), location.slice(0, 80),
-         (email || '').slice(0, 160), payout_notes.slice(0, 120), (rpl_number || '').slice(0, 24)).run();
+         (email || '').slice(0, 160), String(payout_paypal_email).slice(0, 160),
+         (payout_notes || '').slice(0, 120), (rpl_number || '').slice(0, 24)).run();
 
   // Fire-and-forget emails (don't block the response on Resend latency)
   if (email) {
@@ -847,6 +849,130 @@ app.get('/admin/moderation', async (c) => {
     watermarked_url: v.watermarked_key ? getR2PublicUrl(v.watermarked_key) : null,
   }));
   return c.json({ clips });
+});
+
+// ============================
+// ADMIN: PayPal payouts
+// ============================
+
+/** GET /admin/payouts/summary — per-seller unpaid balance across completed orders. */
+app.get('/admin/payouts/summary', async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT s.id, s.display_name, s.payout_paypal_email, s.revenue_share_bps,
+            COALESCE(SUM(o.seller_payout_cents), 0) as owed_cents,
+            COUNT(o.id) as unpaid_order_count,
+            (SELECT COALESCE(SUM(o2.seller_payout_cents), 0)
+               FROM orders o2 WHERE o2.seller_id = s.id AND o2.paid_out_at IS NOT NULL) as lifetime_paid_cents
+       FROM sellers s
+       LEFT JOIN orders o ON o.seller_id = s.id AND o.status = 'completed' AND o.paid_out_at IS NULL
+      WHERE s.approved = 1
+      GROUP BY s.id
+      ORDER BY owed_cents DESC`
+  ).all();
+  return c.json({ sellers: rows.results || [] });
+});
+
+/** GET /admin/payouts/history — recent payout batches. */
+app.get('/admin/payouts/history', async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT p.*, s.display_name as seller_name
+       FROM payouts p LEFT JOIN sellers s ON s.id = p.seller_id
+      ORDER BY p.created_at DESC
+      LIMIT 60`
+  ).all();
+  return c.json({ payouts: (rows.results || []).map((r: any) => ({ ...r, order_ids: JSON.parse(r.order_ids || '[]') })) });
+});
+
+/** POST /admin/payouts/send  body: { seller_id, note? } — send a single-seller payout
+ *  for all their currently-unpaid completed orders via PayPal Payouts API. */
+app.post('/admin/payouts/send', async (c) => {
+  const { seller_id, note } = await c.req.json().catch(() => ({} as any));
+  if (!seller_id) return c.json({ message: 'seller_id required' }, 400);
+
+  const seller = await c.env.DB.prepare('SELECT * FROM sellers WHERE id = ? AND approved = 1').bind(seller_id).first() as any;
+  if (!seller) return c.json({ message: 'Seller not found / not approved' }, 404);
+  if (!seller.payout_paypal_email || !seller.payout_paypal_email.includes('@')) {
+    return c.json({ message: 'Seller has no payout PayPal email on file' }, 400);
+  }
+
+  const orders = await c.env.DB.prepare(
+    `SELECT id, seller_payout_cents, currency FROM orders
+      WHERE seller_id = ? AND status = 'completed' AND paid_out_at IS NULL
+      ORDER BY created_at ASC`
+  ).bind(seller_id).all();
+
+  const orderRows = (orders.results || []) as any[];
+  if (orderRows.length === 0) return c.json({ message: 'Nothing to pay out' }, 400);
+
+  const totalCents = orderRows.reduce((s, o) => s + (o.seller_payout_cents || 0), 0);
+  if (totalCents < 1) return c.json({ message: 'Total below $0.01 — skipped' }, 400);
+
+  const currency = orderRows[0].currency || 'AUD';
+  const payoutId = generateId();
+  const batchId = `SKY-${payoutId.slice(0, 8)}`;
+
+  // Call PayPal Payouts v1 API.
+  let paypalBatchId: string | null = null;
+  let paypalStatus: string | null = null;
+  let paypalError: string | null = null;
+  try {
+    const token = await getPayPalAccessToken(c.env);
+    const amountStr = (totalCents / 100).toFixed(2);
+    const res = await fetch('https://api-m.sandbox.paypal.com/v1/payments/payouts', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sender_batch_header: {
+          sender_batch_id: batchId,
+          email_subject: 'You have a SkyStock payout',
+          email_message: note || `SkyStock FPV seller payout — ${orderRows.length} sale${orderRows.length === 1 ? '' : 's'}.`,
+        },
+        items: [{
+          recipient_type: 'EMAIL',
+          amount: { value: amountStr, currency },
+          receiver: seller.payout_paypal_email,
+          note: `SkyStock payout · ${batchId}`,
+          sender_item_id: batchId,
+        }],
+      }),
+    });
+    if (res.ok) {
+      const data = await res.json() as any;
+      paypalBatchId = data?.batch_header?.payout_batch_id || null;
+      paypalStatus = data?.batch_header?.batch_status || 'PENDING';
+    } else {
+      paypalError = `HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`;
+    }
+  } catch (e: any) {
+    paypalError = e?.message || 'PayPal request failed';
+  }
+
+  const orderIds = orderRows.map(o => o.id);
+  await c.env.DB.prepare(
+    `INSERT INTO payouts (id, seller_id, total_cents, currency, paypal_batch_id, paypal_batch_status, order_ids, note)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).bind(payoutId, seller_id, totalCents, currency, paypalBatchId, paypalStatus || (paypalError ? 'ERROR' : 'PENDING'),
+    JSON.stringify(orderIds), note || null).run();
+
+  // Only mark orders as paid if PayPal accepted the batch.
+  if (paypalBatchId) {
+    const placeholders = orderIds.map(() => '?').join(',');
+    await c.env.DB.prepare(
+      `UPDATE orders SET paid_out_at = datetime('now'), payout_id = ? WHERE id IN (${placeholders})`
+    ).bind(payoutId, ...orderIds).run();
+    // Update the seller's lifetime payout cache.
+    await c.env.DB.prepare('UPDATE sellers SET total_payout_cents = total_payout_cents + ? WHERE id = ?').bind(totalCents, seller_id).run();
+  }
+
+  return c.json({
+    ok: !!paypalBatchId,
+    payout_id: payoutId,
+    paypal_batch_id: paypalBatchId,
+    status: paypalStatus || 'ERROR',
+    error: paypalError,
+    total_cents: totalCents,
+    order_count: orderRows.length,
+  });
 });
 
 /** POST /admin/moderation/:id/approve — publish the clip + notify the seller. */

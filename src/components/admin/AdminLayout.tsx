@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { UserButton, useAuth } from '@clerk/clerk-react';
 import {
-  LayoutDashboard, Film, Upload, ShoppingBag, Settings, ShieldCheck,
+  LayoutDashboard, Film, Upload, ShoppingBag, Settings, ShieldCheck, DollarSign,
   Menu, X, ExternalLink
 } from 'lucide-react';
 import { Logo } from '../Logo';
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: '/admin/videos/new', icon: Upload, label: 'Upload', end: true },
   { to: '/admin/moderation', icon: ShieldCheck, label: 'Moderation', end: true },
   { to: '/admin/orders', icon: ShoppingBag, label: 'Orders', end: false },
+  { to: '/admin/payouts', icon: DollarSign, label: 'Payouts', end: true },
   { to: '/admin/settings', icon: Settings, label: 'Settings', end: true },
 ];
 

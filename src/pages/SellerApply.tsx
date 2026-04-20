@@ -10,8 +10,9 @@ interface ApplicationState {
   display_name: string;
   location: string;
   bio: string;
-  rpl_number: string;      // CASA RePL (optional)
-  payout_notes: string;    // how we pay them in phase 1 — bank/PayPal
+  rpl_number: string;             // CASA RePL (optional)
+  payout_paypal_email: string;    // where we send monthly PayPal payouts
+  payout_notes: string;           // free-text notes (invoice ref, alt contact, etc.)
   avata_confirmation: boolean;
   casa_confirmation: boolean;
   rights_confirmation: boolean;
@@ -27,6 +28,7 @@ export default function SellerApply() {
     location: '',
     bio: '',
     rpl_number: '',
+    payout_paypal_email: '',
     payout_notes: '',
     avata_confirmation: false,
     casa_confirmation: false,
@@ -93,7 +95,7 @@ export default function SellerApply() {
   const canSubmit =
     form.display_name.trim().length >= 2 &&
     form.location.trim().length >= 2 &&
-    form.payout_notes.trim().length >= 3 &&
+    /@/.test(form.payout_paypal_email) &&
     form.avata_confirmation &&
     form.casa_confirmation &&
     form.rights_confirmation &&
@@ -117,6 +119,7 @@ export default function SellerApply() {
           location: form.location.trim(),
           bio: form.bio.trim(),
           rpl_number: form.rpl_number.trim(),
+          payout_paypal_email: form.payout_paypal_email.trim(),
           payout_notes: form.payout_notes.trim(),
           email: user.emailAddresses?.[0]?.emailAddress,
         }),
@@ -288,6 +291,21 @@ export default function SellerApply() {
               />
             </div>
 
+            <div>
+              <label className="block text-xs font-mono uppercase tracking-wider text-sky-400 mb-1.5">PayPal email for payouts *</label>
+              <input
+                type="email"
+                value={form.payout_paypal_email}
+                onChange={(e) => setForm(f => ({ ...f, payout_paypal_email: e.target.value }))}
+                className="w-full px-4 py-3 rounded-xl bg-sky-900/40 border border-sky-700/30 text-white focus:outline-none focus:border-ember-400/60"
+                placeholder="your-paypal@example.com"
+                maxLength={160}
+              />
+              <p className="text-[11px] text-sky-600 mt-1">
+                We send payouts via PayPal every month (or on-demand once your pending balance clears A$20). Use the email attached to your PayPal account.
+              </p>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-mono uppercase tracking-wider text-sky-400 mb-1.5">CASA RePL <span className="text-sky-600 normal-case">(optional)</span></label>
@@ -300,19 +318,16 @@ export default function SellerApply() {
                 />
               </div>
               <div>
-                <label className="block text-xs font-mono uppercase tracking-wider text-sky-400 mb-1.5">Payout preference *</label>
+                <label className="block text-xs font-mono uppercase tracking-wider text-sky-400 mb-1.5">Notes <span className="text-sky-600 normal-case">(optional)</span></label>
                 <input
                   value={form.payout_notes}
                   onChange={(e) => setForm(f => ({ ...f, payout_notes: e.target.value }))}
                   className="w-full px-4 py-3 rounded-xl bg-sky-900/40 border border-sky-700/30 text-white focus:outline-none focus:border-ember-400/60"
-                  placeholder="PayPal: name@email.com"
+                  placeholder="ABN, invoice ref, etc."
                   maxLength={120}
                 />
               </div>
             </div>
-            <p className="text-[11px] text-sky-600 -mt-3">
-              Phase 1 is manual monthly payouts via PayPal or Australian bank transfer. Stripe Connect rolls out in phase 2.
-            </p>
 
             {/* Attestations */}
             <div className="space-y-2.5 pt-3 border-t border-sky-800/30">

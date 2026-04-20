@@ -99,6 +99,7 @@ import AdminEditVideo from './pages/admin/AdminEditVideo';
 import AdminOrders from './pages/admin/AdminOrders';
 import AdminSettings from './pages/admin/AdminSettings';
 import AdminModeration from './pages/admin/AdminModeration';
+import AdminPayouts from './pages/admin/AdminPayouts';
 
 export default function App() {
   return (
@@ -188,6 +189,7 @@ export default function App() {
           <Route path="videos/:id" element={<AdminEditVideo />} />
           <Route path="orders" element={<AdminOrders />} />
           <Route path="moderation" element={<AdminModeration />} />
+          <Route path="payouts" element={<AdminPayouts />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>
       </Routes>
