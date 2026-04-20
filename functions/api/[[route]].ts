@@ -536,20 +536,47 @@ app.get('/admin/sellers', async (c) => {
   return c.json({ sellers: rows.results || [] });
 });
 
-/** POST /admin/sellers/:id/approve */
+/** Patch Clerk publicMetadata.role on a user — used to unlock /seller/* for approved
+ *  sellers without the admin having to touch the Clerk dashboard. Merges with
+ *  existing public_metadata so other keys are preserved. */
+async function setClerkRole(env: Env, userId: string, role: 'seller' | null): Promise<{ ok: boolean; error?: string }> {
+  if (!env.CLERK_SECRET_KEY) return { ok: false, error: 'CLERK_SECRET_KEY not set' };
+  try {
+    const res = await fetch(`https://api.clerk.com/v1/users/${userId}/metadata`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${env.CLERK_SECRET_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      // role:null clears the key; Clerk preserves other public_metadata entries.
+      body: JSON.stringify({ public_metadata: { role } }),
+    });
+    if (!res.ok) return { ok: false, error: `Clerk HTTP ${res.status}: ${(await res.text()).slice(0, 200)}` };
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e?.message || 'Clerk request failed' };
+  }
+}
+
+/** POST /admin/sellers/:id/approve — flips approved=1 AND sets publicMetadata.role='seller'
+ *  so the /seller/* routes unlock on the seller's next Clerk session refresh. */
 app.post('/admin/sellers/:id/approve', async (c) => {
+  const id = c.req.param('id');
   await c.env.DB.prepare(
     `UPDATE sellers SET approved = 1, approved_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`
-  ).bind(c.req.param('id')).run();
-  return c.json({ ok: true });
+  ).bind(id).run();
+  const clerkResult = await setClerkRole(c.env, id, 'seller');
+  return c.json({ ok: true, clerk: clerkResult });
 });
 
-/** POST /admin/sellers/:id/reject  body: { reason } */
+/** POST /admin/sellers/:id/reject  body: { reason } — clears the role too. */
 app.post('/admin/sellers/:id/reject', async (c) => {
+  const id = c.req.param('id');
   const { reason } = await c.req.json().catch(() => ({} as any));
   await c.env.DB.prepare(
     `UPDATE sellers SET approved = 0, payout_notes = ?, updated_at = datetime('now') WHERE id = ?`
-  ).bind(`REJECTED: ${reason || 'no reason given'}`, c.req.param('id')).run();
+  ).bind(`REJECTED: ${reason || 'no reason given'}`, id).run();
+  await setClerkRole(c.env, id, null);
   return c.json({ ok: true });
 });
 
