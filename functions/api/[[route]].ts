@@ -96,6 +96,163 @@ async function verifyAdmin(req: Request, env: Env): Promise<boolean> {
   }
 }
 
+/** Low-level Resend send. Returns true on success, false otherwise — never throws
+ *  so caller code (seller approval etc.) stays atomic even if email fails. */
+async function sendEmail(env: Env, opts: { to: string; subject: string; html: string }): Promise<boolean> {
+  if (!env.RESEND_API_KEY) return false;
+  const siteName = env.SITE_NAME || 'SkyStock FPV';
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: `${siteName} <${env.RESEND_FROM_EMAIL || 'noreply@skystock.com'}>`,
+        to: [opts.to],
+        subject: opts.subject,
+        html: opts.html,
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Shared wrapper HTML — keeps the brand tone consistent across transactional
+ *  emails (download link, seller approved, clip approved, application received). */
+function emailShell(title: string, heading: string, bodyHtml: string, ctaText?: string, ctaUrl?: string): string {
+  const siteUrl = 'https://skystock.pages.dev';
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#060a14;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#060a14;padding:40px 16px;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+        <tr><td style="padding:24px 32px;text-align:center;">
+          <h1 style="margin:0;font-size:22px;font-weight:700;color:#7db4e8;letter-spacing:1px;">${title}</h1>
+        </td></tr>
+        <tr><td style="background:linear-gradient(145deg,#0f1628,#141d36);border:1px solid rgba(59,108,181,0.25);border-radius:16px;padding:40px 32px;">
+          <h2 style="margin:0 0 18px;text-align:center;font-size:24px;font-weight:700;color:#e8edf5;">${heading}</h2>
+          <div style="color:#a3b4cc;font-size:15px;line-height:1.55;">${bodyHtml}</div>
+          ${ctaText && ctaUrl ? `<table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px 0 0;">
+            <a href="${ctaUrl}" style="display:inline-block;padding:14px 32px;background:linear-gradient(135deg,#f97316,#fb923c);color:#ffffff;text-decoration:none;border-radius:12px;font-size:15px;font-weight:700;letter-spacing:0.3px;">${ctaText}</a>
+          </td></tr></table>` : ''}
+        </td></tr>
+        <tr><td style="padding:20px 32px;text-align:center;color:#4a6a94;font-size:12px;">
+          <a href="${siteUrl}" style="color:#7db4e8;text-decoration:none;">skystock.pages.dev</a> · SkyStock FPV
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+async function sendSellerApplicationReceivedEmail(env: Env, to: string, displayName: string) {
+  return sendEmail(env, {
+    to,
+    subject: 'Your SkyStock seller application — under review',
+    html: emailShell(
+      'SkyStock FPV',
+      `Application received, ${displayName}`,
+      `<p>Thanks for applying. We review every seller application personally — usually within 48 hours.</p>
+       <p>Once you're in, you'll be able to upload 360° clips, set your own prices, and keep <strong style="color:#34d399;">80%</strong> of every sale. We handle checkout, previews, email delivery, and hosting.</p>
+       <p style="font-size:13px;color:#7b8fad;">If we need clarification we'll email you at this address.</p>`
+    ),
+  });
+}
+
+async function sendSellerApprovedEmail(env: Env, to: string, displayName: string) {
+  return sendEmail(env, {
+    to,
+    subject: 'You\'re approved — start uploading on SkyStock',
+    html: emailShell(
+      'SkyStock FPV',
+      `Welcome aboard, ${displayName}`,
+      `<p>Your seller application is approved. You can now upload 360° clips from your dashboard.</p>
+       <p style="background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.35);border-radius:10px;padding:12px 16px;color:#34d399;font-size:14px;">
+         <strong>Your split:</strong> 80% to you, 20% to SkyStock. Monthly payouts via the preference you supplied.
+       </p>
+       <p><strong style="color:#e8edf5;">Tips for your first upload:</strong></p>
+       <ul style="color:#a3b4cc;">
+         <li>Drop the raw 360° master — we extract thumbnail + watermarked preview automatically.</li>
+         <li>Click <em>AI Fill</em> to generate title, description, tags and a suggested price from the clip itself.</li>
+         <li>Clips publish after admin review, typically within 48 hours.</li>
+       </ul>`,
+      'Upload your first clip',
+      `${env.SITE_URL || 'https://skystock.pages.dev'}/seller/upload`
+    ),
+  });
+}
+
+async function sendClipApprovedEmail(env: Env, to: string, clipTitle: string, clipId: string) {
+  return sendEmail(env, {
+    to,
+    subject: `Your clip is live — "${clipTitle}"`,
+    html: emailShell(
+      'SkyStock FPV',
+      'Clip approved and live',
+      `<p><strong style="color:#e8edf5;">${clipTitle}</strong> is now on the SkyStock library and available for purchase.</p>
+       <p>Every sale earns you 80% of the list price. You'll see live sales + earnings on your clips dashboard.</p>`,
+      'View your clip',
+      `${env.SITE_URL || 'https://skystock.pages.dev'}/video/${clipId}`
+    ),
+  });
+}
+
+async function sendClipRejectedEmail(env: Env, to: string, clipTitle: string, reason: string) {
+  return sendEmail(env, {
+    to,
+    subject: `Revisions needed — "${clipTitle}"`,
+    html: emailShell(
+      'SkyStock FPV',
+      'Moderator feedback',
+      `<p>We've sent <strong style="color:#e8edf5;">${clipTitle}</strong> back to draft with the following note:</p>
+       <p style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.35);border-radius:10px;padding:12px 16px;color:#fbbf24;font-size:14px;">${reason}</p>
+       <p>Edit or re-upload from your dashboard to resubmit for review.</p>`,
+      'Open your dashboard',
+      `${env.SITE_URL || 'https://skystock.pages.dev'}/seller/clips`
+    ),
+  });
+}
+
+async function notifyAdminNewApplication(env: Env, applicant: { display_name: string; location: string; email: string; id: string }) {
+  const adminEmail = (env.ADMIN_USER_IDS?.split(',')[0] || '').trim();
+  // ADMIN_USER_IDS stores Clerk user ids, not emails — skip self-notify if we don't
+  // have a dedicated admin email yet. Future: store admin_email in [vars].
+  if (!adminEmail.includes('@')) return false;
+  return sendEmail(env, {
+    to: adminEmail,
+    subject: `New seller application — ${applicant.display_name}`,
+    html: emailShell(
+      'SkyStock · Admin',
+      'New seller application',
+      `<p><strong>${applicant.display_name}</strong> (${applicant.location}) applied to sell on SkyStock.</p>
+       <p style="font-size:13px;color:#7b8fad;">Clerk id: <code>${applicant.id}</code><br/>Email: ${applicant.email}</p>`,
+      'Review in moderation queue',
+      `${env.SITE_URL || 'https://skystock.pages.dev'}/admin/moderation`
+    ),
+  });
+}
+
+async function notifyAdminNewClip(env: Env, clip: { title: string; id: string; seller: string }) {
+  const adminEmail = (env.ADMIN_USER_IDS?.split(',')[0] || '').trim();
+  if (!adminEmail.includes('@')) return false;
+  return sendEmail(env, {
+    to: adminEmail,
+    subject: `New clip pending review — ${clip.title}`,
+    html: emailShell(
+      'SkyStock · Admin',
+      'Clip awaiting approval',
+      `<p><strong>${clip.title}</strong> from ${clip.seller} was just uploaded and is waiting for review.</p>`,
+      'Open moderation queue',
+      `${env.SITE_URL || 'https://skystock.pages.dev'}/admin/moderation`
+    ),
+  });
+}
+
 async function sendDownloadEmail(env: Env, to: string, videoTitle: string, token: string) {
   const downloadUrl = `${env.SITE_URL}/download?token=${token}`;
   const siteName = env.SITE_NAME || 'SkyStock FPV';
@@ -402,6 +559,12 @@ app.post('/seller/apply', async (c) => {
   ).bind(userId, display_name.slice(0, 60), (bio || '').slice(0, 240), location.slice(0, 80),
          (email || '').slice(0, 160), payout_notes.slice(0, 120), (rpl_number || '').slice(0, 24)).run();
 
+  // Fire-and-forget emails (don't block the response on Resend latency)
+  if (email) {
+    c.executionCtx.waitUntil(sendSellerApplicationReceivedEmail(c.env, email, display_name));
+    c.executionCtx.waitUntil(notifyAdminNewApplication(c.env, { display_name, location, email, id: userId }));
+  }
+
   return c.json({ ok: true, id: userId, status: 'pending_review' });
 });
 
@@ -435,6 +598,14 @@ app.post('/seller/videos', async (c) => {
   ).bind(id, data.title, data.description || '', data.location || '', JSON.stringify(data.tags || []),
     data.price_cents, data.resolution || '4K', data.fps || 60, data.duration_seconds || 0,
     sellerId).run();
+
+  // Notify the admin there's something new waiting in the moderation queue.
+  const seller = await c.env.DB.prepare('SELECT display_name FROM sellers WHERE id = ?').bind(sellerId).first() as any;
+  c.executionCtx.waitUntil(notifyAdminNewClip(c.env, {
+    title: data.title,
+    id,
+    seller: seller?.display_name || sellerId,
+  }));
 
   const video = await c.env.DB.prepare('SELECT * FROM videos WHERE id = ?').bind(id).first();
   return c.json(video, 201);
@@ -566,6 +737,10 @@ app.post('/admin/sellers/:id/approve', async (c) => {
     `UPDATE sellers SET approved = 1, approved_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`
   ).bind(id).run();
   const clerkResult = await setClerkRole(c.env, id, 'seller');
+  const row = await c.env.DB.prepare('SELECT email, display_name FROM sellers WHERE id = ?').bind(id).first() as any;
+  if (row?.email) {
+    c.executionCtx.waitUntil(sendSellerApprovedEmail(c.env, row.email, row.display_name || 'operator'));
+  }
   return c.json({ ok: true, clerk: clerkResult });
 });
 
@@ -600,20 +775,39 @@ app.get('/admin/moderation', async (c) => {
   return c.json({ clips });
 });
 
-/** POST /admin/moderation/:id/approve — publish the clip. */
+/** POST /admin/moderation/:id/approve — publish the clip + notify the seller. */
 app.post('/admin/moderation/:id/approve', async (c) => {
+  const id = c.req.param('id');
   await c.env.DB.prepare(
     `UPDATE videos SET status='published', moderation_notes=NULL, updated_at=datetime('now') WHERE id = ?`
-  ).bind(c.req.param('id')).run();
+  ).bind(id).run();
+  const row = await c.env.DB.prepare(
+    `SELECT v.title, v.id as video_id, s.email
+       FROM videos v LEFT JOIN sellers s ON s.id = v.seller_id
+      WHERE v.id = ?`
+  ).bind(id).first() as any;
+  if (row?.email) {
+    c.executionCtx.waitUntil(sendClipApprovedEmail(c.env, row.email, row.title, row.video_id));
+  }
   return c.json({ ok: true });
 });
 
-/** POST /admin/moderation/:id/reject  body: { reason } — send back to draft with notes. */
+/** POST /admin/moderation/:id/reject  body: { reason } — send back to draft + email seller. */
 app.post('/admin/moderation/:id/reject', async (c) => {
+  const id = c.req.param('id');
   const { reason } = await c.req.json().catch(() => ({} as any));
+  const finalReason = reason || 'rejected without reason';
   await c.env.DB.prepare(
     `UPDATE videos SET status='draft', moderation_notes=?, updated_at=datetime('now') WHERE id = ?`
-  ).bind(reason || 'rejected without reason', c.req.param('id')).run();
+  ).bind(finalReason, id).run();
+  const row = await c.env.DB.prepare(
+    `SELECT v.title, s.email
+       FROM videos v LEFT JOIN sellers s ON s.id = v.seller_id
+      WHERE v.id = ?`
+  ).bind(id).first() as any;
+  if (row?.email) {
+    c.executionCtx.waitUntil(sendClipRejectedEmail(c.env, row.email, row.title, finalReason));
+  }
   return c.json({ ok: true });
 });
 

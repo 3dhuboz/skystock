@@ -40,6 +40,47 @@ export default function SellerApply() {
     if (hasApplied) setSubmitted(true);
   }, [isSeller, hasApplied, navigate]);
 
+  // On mount (user signed in), check if they've already submitted an application —
+  // a sellers row exists in D1 even when Clerk publicMetadata hasn't been flipped yet.
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const clerk = (window as any).Clerk;
+        const token = await clerk?.session?.getToken?.();
+        if (!token) return;
+        const res = await fetch('/api/seller/me', { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return;
+        const { seller } = await res.json();
+        if (seller) setSubmitted(true);
+      } catch { /* ignore */ }
+    })();
+  }, [user]);
+
+  // Poll seller/me once the user has submitted — as soon as the admin approves,
+  // Clerk's publicMetadata.role takes ≤60s to propagate; meanwhile the D1 row
+  // gives us a fast signal that the approval happened.
+  useEffect(() => {
+    if (!submitted || isSeller) return;
+    const id = window.setInterval(async () => {
+      try {
+        const clerk = (window as any).Clerk;
+        const token = await clerk?.session?.getToken?.();
+        if (!token) return;
+        const res = await fetch('/api/seller/me', { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) return;
+        const { seller } = await res.json();
+        if (seller?.approved) {
+          // Ask Clerk to re-pull the session so publicMetadata.role refreshes,
+          // then hard-navigate into the seller workspace.
+          try { await clerk?.session?.reload?.(); } catch {}
+          window.location.href = '/seller/clips';
+        }
+      } catch { /* ignore */ }
+    }, 12000);
+    return () => window.clearInterval(id);
+  }, [submitted, isSeller]);
+
   useEffect(() => {
     if (user && !form.display_name) {
       setForm(f => ({
