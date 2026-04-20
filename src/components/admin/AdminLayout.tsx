@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { UserButton } from '@clerk/clerk-react';
+import { UserButton, useAuth } from '@clerk/clerk-react';
 import {
   LayoutDashboard, Film, Upload, ShoppingBag, Settings, ShieldCheck,
   Menu, X, ExternalLink
@@ -19,6 +19,30 @@ const NAV_ITEMS = [
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const navigate = useNavigate();
+  const { getToken } = useAuth();
+  const [pendingCount, setPendingCount] = useState(0);
+
+  // Poll moderation queue size every 30s so the admin sees a badge when
+  // there's something waiting without having to open the page.
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const t = await getToken();
+        const [sRes, cRes] = await Promise.all([
+          fetch('/api/admin/sellers', { headers: { Authorization: `Bearer ${t}` } }),
+          fetch('/api/admin/moderation', { headers: { Authorization: `Bearer ${t}` } }),
+        ]);
+        const sData = sRes.ok ? await sRes.json() : { sellers: [] };
+        const cData = cRes.ok ? await cRes.json() : { clips: [] };
+        const count = (sData.sellers?.filter((s: any) => !s.approved).length || 0) + (cData.clips?.length || 0);
+        if (!cancelled) setPendingCount(count);
+      } catch {}
+    }
+    load();
+    const id = window.setInterval(load, 30000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  }, [getToken]);
 
   return (
     <div className="min-h-screen bg-sky-950 flex">
@@ -58,7 +82,15 @@ export default function AdminLayout() {
                 }
               >
                 <item.icon className="w-5 h-5" />
-                {item.label}
+                <span className="flex-1">{item.label}</span>
+                {item.to === '/admin/moderation' && pendingCount > 0 && (
+                  <span
+                    className="min-w-[1.4rem] h-5 px-1.5 rounded-full flex items-center justify-center text-[10px] font-mono font-bold text-white tabular-nums"
+                    style={{ background: 'linear-gradient(135deg, #f97316, #fb923c)', boxShadow: '0 0 12px rgba(249,115,22,0.4)' }}
+                  >
+                    {pendingCount}
+                  </span>
+                )}
               </NavLink>
             ))}
           </nav>

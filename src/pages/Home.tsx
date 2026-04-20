@@ -309,6 +309,69 @@ export default function Home() {
           ))}
         </div>
       </section>
+
+      {/* ====== SELLER RECRUIT ====== */}
+      <section className="relative border-y border-sky-800/30 overflow-hidden">
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            background:
+              'radial-gradient(circle at 20% 50%, rgba(249,115,22,0.15), transparent 45%), radial-gradient(circle at 85% 50%, rgba(56,189,248,0.12), transparent 45%)',
+          }}
+        />
+        <div className="relative max-w-7xl mx-auto px-6 lg:px-12 py-20 grid grid-cols-1 md:grid-cols-2 gap-12 items-center">
+          <div>
+            <div className="text-[11px] font-mono text-ember-400 tracking-[0.35em] mb-3">FLY AN AVATA 360? SELL YOUR CLIPS.</div>
+            <h2 className="font-display font-bold text-4xl md:text-5xl text-white tracking-tight leading-[1.05]">
+              Your footage.{' '}
+              <span
+                style={{
+                  backgroundImage: 'linear-gradient(90deg, #7dd3fc 0%, #f97316 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                }}
+              >
+                Our marketplace.
+              </span>
+            </h2>
+            <p className="mt-4 text-sky-300 max-w-lg leading-relaxed">
+              Upload your raw 360° clips. SkyStock handles watermarking, the in-browser reframe editor, checkout, email delivery, and hosting. You keep <strong className="text-ember-300">80%</strong> of every sale, no exclusivity.
+            </p>
+            <Link
+              to="/seller/apply"
+              className="mt-6 inline-flex items-center gap-2 px-5 py-3 rounded-xl font-display font-semibold text-sm text-white transition-all hover:scale-[1.02]"
+              style={{
+                background: 'linear-gradient(135deg, #f97316 0%, #fb923c 100%)',
+                boxShadow: '0 12px 32px -10px rgba(249,115,22,0.5)',
+              }}
+            >
+              Apply as a seller <ArrowRight className="w-4 h-4" />
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { kicker: 'SPLIT',       headline: '80 / 20',          sub: 'You / platform' },
+              { kicker: 'EXCLUSIVITY', headline: 'None',             sub: 'List wherever else you want' },
+              { kicker: 'EDITOR',      headline: 'Shader-reframe',   sub: 'Buyers reframe in browser — unique moat' },
+              { kicker: 'PAYOUT',      headline: 'Monthly',          sub: 'PayPal or AU bank (Stripe Connect in Q2)' },
+            ].map((c, i) => (
+              <div
+                key={i}
+                className="rounded-2xl p-5"
+                style={{
+                  background: 'linear-gradient(180deg, rgba(20,29,54,0.7), rgba(10,14,26,0.85))',
+                  border: '1px solid rgba(59,108,181,0.25)',
+                }}
+              >
+                <div className="text-[10px] font-mono text-ember-400 tracking-[0.25em] mb-2">{c.kicker}</div>
+                <div className="font-display font-bold text-white text-2xl leading-none">{c.headline}</div>
+                <div className="text-xs text-sky-500 mt-2 leading-snug">{c.sub}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

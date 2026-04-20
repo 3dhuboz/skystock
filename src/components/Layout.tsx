@@ -138,18 +138,22 @@ export default function Layout() {
               </p>
             </div>
             <div>
-              <h4 className="font-display font-semibold text-sky-200 mb-3">Quick Links</h4>
+              <h4 className="font-display font-semibold text-sky-200 mb-3">Library</h4>
               <div className="space-y-2">
                 <Link to="/browse" className="block text-sm text-sky-500 hover:text-sky-300 transition-colors">Browse Footage</Link>
                 <a href="mailto:contact@skystock.com" className="block text-sm text-sky-500 hover:text-sky-300 transition-colors">Contact</a>
               </div>
             </div>
             <div>
-              <h4 className="font-display font-semibold text-sky-200 mb-3">License</h4>
-              <p className="text-sm text-sky-500 leading-relaxed">
-                All footage is royalty-free for commercial and personal use.
-                One-time purchase, unlimited projects.
-              </p>
+              <h4 className="font-display font-semibold text-sky-200 mb-3">Sellers</h4>
+              <div className="space-y-2">
+                <Link to="/seller/apply" className="block text-sm text-ember-400 hover:text-ember-300 transition-colors font-display font-semibold">
+                  Sell your Avata 360 footage →
+                </Link>
+                <p className="text-xs text-sky-600 leading-relaxed">
+                  80% seller take, no exclusivity. We handle hosting, previews, and checkout.
+                </p>
+              </div>
             </div>
           </div>
           <div className="border-t border-sky-800/40 mt-8 pt-6 text-center">
